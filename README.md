@@ -5,16 +5,18 @@ modems and decoders, and for making training data for neural networks.
 It is a Rust crate with a command-line tool, and a numpy Python package
 that implements the same model.
 
-Status: 0.1, early. The Watterson fading model, its standard presets and
-white noise are done and checked against theory. Receiver effects, noise
-and interference are next (see [Roadmap](#roadmap)).
+Status: 0.1, early. The Watterson fading model, its standard presets,
+white noise and the receiver (mistuning, passband, AGC) are done and
+checked against theory. Noise and interference are next (see
+[Roadmap](#roadmap)).
 
 ## The model
 
 The Watterson model as ITU-R F.1487 defines it. The signal goes down a
 tapped delay line with one tap per propagation path (ionospheric mode).
 At each tap the delayed signal is multiplied by a random complex tap
-gain, and the taps are summed. Noise is added after that.
+gain, and the taps are summed. Noise is added after that, and then the
+receiver mistunes, filters and applies AGC.
 
 ```mermaid
 flowchart LR
@@ -22,7 +24,7 @@ flowchart LR
   x --> d2[delay τ2] --> m2((×)) --> s
   g1[tap gain G1 t] --> m1
   g2[tap gain G2 t] --> m2
-  s --> n((+)) --> y[output]
+  s --> n((+)) --> r[receiver: mistune, passband, AGC] --> y[output]
   w[noise] --> n
 ```
 
@@ -42,6 +44,30 @@ pulls apart AM sidebands, RTTY tones and OFDM carriers.
 It works on complex baseband (IQ), or on real audio through the analytic
 signal. On audio, a positive Doppler shift moves the audio up; for LSB
 audio, flip the sign of the shift.
+
+## Receiver
+
+After the channel and the noise, in this order:
+
+- **Mistuning:** shifts everything by a frequency; positive moves the
+  audio up. In Python it can be one value per batch row.
+- **Passband:** a linear-phase FIR with −6 dB points at the given edges,
+  a 60 dB stopband and a transition width (100 Hz by default) between
+  pass and stop edges. The length follows from Kaiser's formula: 437
+  taps at 12 kS/s and 100 Hz. The taps are complex, so on IQ the band can
+  be one-sided: 300 to 2700 Hz is USB, −2700 to −300 Hz is LSB.
+- **AGC:** a peak AGC working in 1 ms blocks. Each block's peak envelope
+  updates a level: up with the attack time constant; held for the hang
+  time after the last peak within 1 dB of the level; then down
+  exponentially with the decay time constant. The gain is the output
+  target over the level, at most the maximum gain, ramped across each
+  block. Defaults: attack 2 ms, no hang, decay 0.5 s, output peak 0.25,
+  at most 60 dB. A rise in level overshoots for about the attack time,
+  as in a receiver. The AGC starts settled on the first block's level.
+
+On real audio the receiver works on the analytic signal, and the AGC
+follows its envelope. The Rust and Python receivers give the same output
+for the same input, to about 1e-6.
 
 ## Presets
 
@@ -73,7 +99,13 @@ ionochannel --preset poor --snr 6 in.wav out.wav             # audio
 ionochannel --preset high-disturbed --snr 0 iq.wav out.wav   # 2-channel WAV = I/Q
 ionochannel --rate 24000 --preset flutter in.cf32 out.cf32   # complex float32
 ionochannel --path 0,1,0,0.4 --path 2.5,1,0.5,0.3 --specular 0,0.3 in.wav out.wav
+ionochannel --preset poor --snr 3 --ssb --mistune 80 in.wav out.wav   # SSB receiver
+ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav out.wav  # AM as I/Q
 ```
+
+- **Receiver:** `--mistune HZ`, `--passband LO,HI`, `--transition HZ`,
+  `--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]`. `--ssb` is
+  `--passband 300,2700 --agc 500`.
 
 - **SNR:** measured against the input's mean power, in a reference
   bandwidth (`--bw`, 2500 Hz by default). The noise is added after the
@@ -96,7 +128,10 @@ ch.process(&mut block); // streams: any block size, no end, same output
 ```
 
 `RealChannel` does the same for real audio. `noise` adds white noise at
-an SNR in a bandwidth.
+an SNR in a bandwidth. `Receiver` and `RealReceiver` stream the same
+way, with `ReceiverSpec::ssb()` or your own `ReceiverSpec { mistune_hz,
+passband, transition_hz, agc }`; `latency()` says how far the output
+lags.
 
 ## Python
 
@@ -108,6 +143,8 @@ ch = ic.Channel(12000, ic.preset("poor"))
 y = ch.apply(x, rng)          # x: (..., n) real or complex; each row its own fading
 y = ic.awgn(y, snr_db=rng.uniform(-10, 20, len(x)), fs=12000, rng=rng,
             signal_power=ic.power(x))
+y = ic.Receiver.ssb(12000, mistune_hz=rng.uniform(-150, 150, len(x))).apply(y)
+# or ic.Receiver(fs, passband=(lo, hi), mistune_hz=..., agc=ic.Agc(decay_s=2.0))
 ```
 
 - **Dependencies:** numpy only. Install with `pip install .`, or put
@@ -116,7 +153,8 @@ y = ic.awgn(y, snr_db=rng.uniform(-10, 20, len(x)), fs=12000, rng=rng,
   fractional delays done in the frequency domain, so there's no latency.
   Each leading index, such as a batch row, gets its own fading.
 - **Speed:** a batch of 128 × 4 s at 12 kS/s takes about 2 s on one CPU
-  core, about 250× real time. The FFTs dominate.
+  core, about 250× real time. The FFTs dominate. The SSB receiver adds
+  about 1.3 s.
 - **Seeds:** the same seed gives different numbers from the Rust crate,
   but the same statistics.
 
@@ -137,6 +175,21 @@ Both implementations are tested against closed-form theory
 - **Fractional delays:** exact for tones up to 0.375 fs.
 - **Streaming:** the output doesn't depend on block size.
 
+The receiver is tested against its design
+([`tests/receiver.rs`](tests/receiver.rs),
+[`python/tests/test_receiver.py`](python/tests/test_receiver.py)):
+
+- **Passband:** 0 ± 0.02 dB in the band, −6.02 ± 0.1 dB at the edges,
+  below −59 dB at the stop edges and beyond.
+- **Mistuning:** a 1000 Hz tone comes out at 1150 Hz, with nothing left
+  at 1000 or 850 Hz.
+- **Latency:** the Rust output equals the input delayed by `latency()`.
+  Python has none.
+- **AGC:** holds the target to 0.01 dB; after a 20 dB rise it is within
+  1 dB in 6 ms; after a 20 dB drop it is back to −1 dB after
+  decay × ln(10 / 10^(1/20)), give or take 3 ms, plus the hang time if
+  set; below the floor the gain is the maximum gain.
+
 [`tools/compare_skywave.py`](tools/compare_skywave.py) checks both
 against [skywave](https://github.com/openarq-project/skywave)'s Watterson
 channel. The results are in [docs/validation.md](docs/validation.md).
@@ -144,6 +197,7 @@ channel. The results are in [docs/validation.md](docs/validation.md).
 ```sh
 cargo test --release
 python3 python/tests/test_stats.py      # or pytest
+python3 python/tests/test_receiver.py
 ```
 
 ## Roadmap
@@ -153,8 +207,8 @@ reduction (SSB voice, CW, AM broadcast) and for a signal identifier, and
 synthetic tests for CW and FSK decoders. Background for each item is in
 [docs/references.md](docs/references.md).
 
-1. **Receiver effects:** SSB passband (300–2700 Hz), mistuning (about
-   ±150 Hz), AGC, clock offset.
+1. **Receiver effects:** done: passband, mistuning, AGC. Still to do:
+   clock (sample rate) offset.
 2. **Impulsive atmospheric noise** (Hall or Middleton Class A),
    calibrated to ITU-R P.372 (Vd, APD), with the man-made noise floor
    set by site type; **man-made interference:** switching-supply combs,

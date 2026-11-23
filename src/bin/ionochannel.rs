@@ -1,14 +1,19 @@
 //! ionochannel: put a recording through an HF channel.
 //!
 //!   ionochannel [--preset NAME | --path D,S[,F[,P]]... | --specular D,P[,F]...]
-//!               [--snr DB [--bw HZ]] [--seed N] [--rate HZ] IN OUT
+//!               [--snr DB [--bw HZ]] [--seed N] [--rate HZ]
+//!               [--mistune HZ] [--passband LO,HI [--transition HZ]]
+//!               [--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]] [--ssb] IN OUT
 //!   ionochannel --list
 //!
 //! IN/OUT: .wav (mono: real audio; two channels: I/Q) or .cf32 (complex
 //! float32, needs --rate). The output lines up with the input (the
 //! filters' latency taken out) and keeps its format.
 
-use ionochannel::{Channel, Component, PathSpec, RealChannel, Rng, noise, presets, wav};
+use ionochannel::{
+    Agc, Channel, Component, PathSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Rng,
+    noise, presets, wav,
+};
 use num_complex::Complex32;
 use std::process::exit;
 
@@ -22,6 +27,12 @@ const USAGE: &str =
   --bw HZ                 SNR reference bandwidth [2500]
   --seed N                fading and noise realisation [1]
   --rate HZ               sample rate of a .cf32 input
+ receiver (after the noise):
+  --mistune HZ            tune off by HZ (positive moves the audio up)
+  --passband LO,HI        filter, -6 dB edges in Hz (IQ: negative for LSB)
+  --transition HZ         filter transition width [100]
+  --agc D[,H[,A]]         AGC: decay, hang, attack in ms [500,0,2]; output peak 0.25
+  --ssb                   --passband 300,2700 --agc 500
   --list                  list the presets";
 
 fn die(m: &str) -> ! {
@@ -51,6 +62,7 @@ fn main() {
     let (mut preset, mut paths, mut snr, mut bw, mut seed, mut rate, mut files) =
         (None, Vec::new(), None, 2500.0, 1u64, None, Vec::new());
     let mut explicit_power = false;
+    let mut rx = ReceiverSpec::default();
     while let Some(arg) = a.next() {
         let mut val = |n: &str| {
             a.next()
@@ -128,6 +140,34 @@ fn main() {
                     .unwrap_or_else(|_| die("--seed: not a number"))
             }
             "--rate" => rate = Some(nums(&val("--rate"), 1, 1, "--rate")[0]),
+            "--mistune" => rx.mistune_hz = nums(&val("--mistune"), 1, 1, "--mistune")[0],
+            "--passband" => {
+                let v = nums(&val("--passband"), 2, 2, "--passband");
+                if v[1] <= v[0] {
+                    die("--passband: HI must be above LO");
+                }
+                rx.passband = Some((v[0], v[1]));
+            }
+            "--transition" => {
+                rx.transition_hz = nums(&val("--transition"), 1, 1, "--transition")[0];
+                if rx.transition_hz <= 0.0 {
+                    die("--transition must be > 0");
+                }
+            }
+            "--agc" => {
+                let v = nums(&val("--agc"), 1, 3, "--agc");
+                let d = Agc::default();
+                rx.agc = Some(Agc {
+                    decay_s: v[0] * 1e-3,
+                    hang_s: v.get(1).map_or(d.hang_s, |h| h * 1e-3),
+                    attack_s: v.get(2).map_or(d.attack_s, |a| a * 1e-3),
+                    ..d
+                });
+            }
+            "--ssb" => {
+                rx.passband = Some((300.0, 2700.0));
+                rx.agc.get_or_insert_with(Agc::default);
+            }
             s if s.starts_with("--") => die(&format!("unknown option {s}\n{USAGE}")),
             _ => files.push(arg),
         }
@@ -221,6 +261,13 @@ fn main() {
         if let Some(s) = snr {
             noise::add_r(x, noise::noise_power(p0, s, bw, fs, false), &mut rng);
         }
+        if rx != ReceiverSpec::default() {
+            let mut r = RealReceiver::new(fs, &rx);
+            let lat = r.latency();
+            x.extend(std::iter::repeat_n(0.0, lat));
+            r.process(x);
+            x.drain(..lat);
+        }
     }
     if let Some(x) = cplx.as_mut() {
         let p0 = noise::power_c(x);
@@ -234,6 +281,13 @@ fn main() {
         if let Some(s) = snr {
             noise::add_c(x, noise::noise_power(p0, s, bw, fs, true), &mut rng);
         }
+        if rx != ReceiverSpec::default() {
+            let mut r = Receiver::new(fs, &rx);
+            let lat = r.latency();
+            x.extend(std::iter::repeat_n(Complex32::default(), lat));
+            r.process(x);
+            x.drain(..lat);
+        }
     }
     let n = real
         .as_ref()
@@ -246,6 +300,9 @@ fn main() {
         snr.map(|s| format!(", SNR {s} dB in {bw} Hz"))
             .unwrap_or_default()
     );
+    if rx != ReceiverSpec::default() {
+        eprintln!("ionochannel: receiver {rx:?}");
+    }
     if is_cf32(out) {
         let c = cplx.unwrap_or_else(|| die("a real (mono) input can't be written as .cf32"));
         let b: Vec<u8> = c

@@ -159,19 +159,19 @@ impl Channel {
 /// Half length of the Hilbert transformer for real signals.
 const HILBERT_HALF: usize = 127;
 
-/// A channel for real passband signals (audio): the analytic signal
-/// (Hilbert FIR, 255 taps, Blackman) through a [`Channel`], the real part
-/// out. A positive Doppler shift moves the audio up. Usable from about
-/// fs/100 to fs/2 - fs/100 (60-5940 Hz at 12 kS/s).
-pub struct RealChannel {
-    ch: Channel,
+/// The analytic signal of a real stream: a Hilbert FIR (255 taps,
+/// Blackman), the real part delayed to match. Usable from about fs/100 to
+/// fs/2 - fs/100.
+pub(crate) struct Analytic {
     taps: Vec<f32>,
     hist: Vec<f32>,
-    buf: Vec<Complex32>,
 }
 
-impl RealChannel {
-    pub fn new(fs: f64, paths: &[PathSpec], seed: u64) -> Self {
+impl Analytic {
+    /// Samples by which the output lags the input.
+    pub(crate) const LATENCY: usize = HILBERT_HALF;
+
+    pub(crate) fn new() -> Self {
         let n = 2 * HILBERT_HALF + 1;
         let taps = (0..n)
             .map(|k| {
@@ -185,33 +185,56 @@ impl RealChannel {
                 }
             })
             .collect();
-        RealChannel {
-            ch: Channel::new(fs, paths, seed),
+        Analytic {
             taps,
             hist: vec![0.0; n - 1],
+        }
+    }
+
+    /// Replaces `out` with the analytic signal of `x`.
+    pub(crate) fn process(&mut self, x: &[f32], out: &mut Vec<Complex32>) {
+        let h = self.hist.len();
+        self.hist.extend_from_slice(x);
+        out.clear();
+        for i in 0..x.len() {
+            // the analytic sample centred HILBERT_HALF back from the newest
+            let w = &self.hist[i..i + h + 1];
+            let im: f32 = w.iter().rev().zip(&self.taps).map(|(v, t)| v * t).sum();
+            out.push(Complex32::new(w[HILBERT_HALF], im));
+        }
+        let n = self.hist.len();
+        self.hist.drain(..n - h);
+    }
+}
+
+/// A channel for real passband signals (audio): the analytic signal
+/// (Hilbert FIR, 255 taps, Blackman) through a [`Channel`], the real part
+/// out. A positive Doppler shift moves the audio up. Usable from about
+/// fs/100 to fs/2 - fs/100 (60-5940 Hz at 12 kS/s).
+pub struct RealChannel {
+    ch: Channel,
+    analytic: Analytic,
+    buf: Vec<Complex32>,
+}
+
+impl RealChannel {
+    pub fn new(fs: f64, paths: &[PathSpec], seed: u64) -> Self {
+        RealChannel {
+            ch: Channel::new(fs, paths, seed),
+            analytic: Analytic::new(),
             buf: Vec::new(),
         }
     }
 
     pub fn latency(&self) -> usize {
-        HILBERT_HALF + self.ch.latency()
+        Analytic::LATENCY + self.ch.latency()
     }
 
     pub fn process(&mut self, x: &mut [f32]) {
-        let h = self.hist.len();
-        self.hist.extend_from_slice(x);
-        self.buf.clear();
-        for i in 0..x.len() {
-            // the analytic sample centred HILBERT_HALF back from the newest
-            let w = &self.hist[i..i + h + 1];
-            let im: f32 = w.iter().rev().zip(&self.taps).map(|(v, t)| v * t).sum();
-            self.buf.push(Complex32::new(w[HILBERT_HALF], im));
-        }
+        self.analytic.process(x, &mut self.buf);
         self.ch.process(&mut self.buf);
         for (o, z) in x.iter_mut().zip(&self.buf) {
             *o = z.re;
         }
-        let n = self.hist.len();
-        self.hist.drain(..n - h);
     }
 }

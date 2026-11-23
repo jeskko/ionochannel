@@ -5,7 +5,9 @@
 //! line, one tap per propagation path, each tap's gain a sum of Rayleigh
 //! scatter (Gaussian Doppler spectrum, spread and shift) and specular
 //! components; then noise. Complex baseband ([`Channel`]) or real audio
-//! ([`RealChannel`]); named conditions in [`presets`].
+//! ([`RealChannel`]); named conditions in [`presets`]. After that, the
+//! receiver: mistuning, passband filter and AGC ([`Receiver`],
+//! [`RealReceiver`]).
 //!
 //! ```
 //! use ionochannel::{presets, Channel};
@@ -20,9 +22,11 @@ pub mod channel;
 pub mod fading;
 pub mod noise;
 pub mod presets;
+pub mod receiver;
 pub mod rng;
 pub mod wav;
 
 pub use channel::{Channel, PathSpec, RealChannel};
 pub use fading::Component;
+pub use receiver::{Agc, RealReceiver, Receiver, ReceiverSpec};
 pub use rng::Rng;
