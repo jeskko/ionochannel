@@ -82,6 +82,22 @@ follow a trajectory, a sum of terms added to the path's own value:
   WWV/CHU carrier Doppler from HamSCI Grape (Zenodo 6622112, 8122124).
   Convert it yourself to time and value; check each record's licence.
   None ship with ionochannel.
+- **Absorption events:** NOAA SWPC's D-RAP relations turn space-weather
+  records into path loss:
+  - **Flares:** the highest frequency affected by 1 dB of vertical
+    absorption is 10·log10(X-ray flux, W/m²) + 65 MHz at the sub-solar
+    point. That's exact at M1 → 15 and X1 → 25 MHz, and within 2 MHz of
+    the forecasters' table at M5 and X5. It falls off as cos(χ)^0.75
+    with the solar zenith angle.
+  - **Polar cap absorption:** 0.115·√J dB by day (J = integral proton
+    flux above 5.2 MeV) and 0.020·√J by night (above 2.2 MeV), at
+    30 MHz.
+  - **Frequency scaling:** A(f) = (f0 / f)^1.5 · A(f0).
+  - `flare_absorption_db`, `pca_absorption_db` and `absorption_table`
+    (Python), and the same functions in `vary` (Rust), turn a GOES flux
+    record into a power trajectory, so the flare's time profile comes
+    from the record. The values are for vertical incidence; scale them
+    for your path's geometry yourself.
 - **Seeds:** the changes draw their own random numbers, so a channel's
   fading for a seed is the same with or without them. A test pins the
   Rust outputs for a set of seeds.
@@ -375,7 +391,8 @@ ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav ou
   on every path. `--doppler-drift RMS_HZ,TAU_S` makes each path's
   Doppler drift at random. `--doppler-file PATH` replays a Doppler
   record on every path: a CSV of `time_s,hz` lines, with `#` lines
-  skipped.
+  skipped. `--flare-file PATH,F_MHZ[,FACTOR]` dims every path by the
+  D-RAP absorption at F MHz from a CSV of `time_s,xray_flux` lines.
 - **Recorded noise:** `--noise-file PATH,DB` mixes a WAV recording in
   at an SNR in `--bw`; `--noise-band LO,HI` sets the band its level is
   measured in.
@@ -553,6 +570,9 @@ Paths that change ([`tests/vary.rs`](tests/vary.rs),
   0.01 rad. A moving delay held still matches the FFT delay.
 - **Drift:** the rms is within 10 %.
 - **Table:** a replayed record is followed to 0.01 Hz.
+- **Absorption:** D-RAP's highest affected frequency is exact at M1 and
+  X1; 1 dB at the HAF; the (f0 / f)^1.5 scaling; polar cap absorption at
+  30 MHz; a flare record dims a path as computed.
 - **TID:** the Doppler equals −f times the rate of change of the delay.
 - **Seeds:** [`tests/regression.rs`](tests/regression.rs) pins the
   outputs of `Channel::new` for a set of seeds.
@@ -637,6 +657,9 @@ Paths that change ([`tests/vary.rs`](tests/vary.rs),
   0.01 rad. A moving delay held still matches the FFT delay.
 - **Drift:** the rms is within 10 %.
 - **Table:** a replayed record is followed to 0.01 Hz.
+- **Absorption:** D-RAP's highest affected frequency is exact at M1 and
+  X1; 1 dB at the HAF; the (f0 / f)^1.5 scaling; polar cap absorption at
+  30 MHz; a flare record dims a path as computed.
 - **TID:** the Doppler equals −f times the rate of change of the delay.
 - **Seeds:** [`tests/regression.rs`](tests/regression.rs) pins the
   outputs of `Channel::new` for a set of seeds.
@@ -696,8 +719,8 @@ synthetic tests for CW and FSK decoders. Background for each item is in
    found doesn't give usable numbers).
 8. **A wideband mode** (Vogler & Hoffmeyer) for signals wider than about
    12 kHz.
-9. **Absorption events:** a sudden ionospheric disturbance fade-out and
-   polar cap absorption.
+9. **Absorption events:** done (D-RAP flare and polar cap absorption
+   from flux records).
 
 ## Licence
 

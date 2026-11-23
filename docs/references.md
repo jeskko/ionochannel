@@ -145,8 +145,14 @@ How each entry was checked:
   Stocker. [abs] **Adds:** a sporadic E path (short delay, low spread).
 - **Equatorial spread-F** (Los Alamos campaigns, OSTI 329722 and
   10170108): Doppler spread over 6 Hz at −10 dB on half of evenings,
-  with bottomside spread-F doing the most harm. [abs] **Adds:** a
-  "post-sunset equatorial" preset.
+  with bottomside spread-F doing the most harm. [abs] OSTI 10170108
+  (Fitzgerald, Argo, Carlos, LA-UR-93-2140, Maloelap–Bikini, 702 km,
+  10.2 MHz, August 1990), read 2026-11-23 from a poor OCR scan: "Doppler
+  spreads of greater than 20 Hz were not uncommon"; spatial correlation
+  down to 50 m and frequency coherence bandwidth to about 1 kHz. No
+  definitions or delay spreads readable, so no preset. OSTI 329722 gave
+  HTTP 404. **Adds:** a "post-sunset equatorial" preset, given a better
+  source.
 - **NVIS and long paths (Vilella, Ads, Hervás et al.)**: Antarctica to
   Spain (Radio Science 2008 and 2012, Remote Sensing 2015), and NVIS
   ("Study of NVIS Channel for USN Protocol Definition in Antarctica",
@@ -203,9 +209,15 @@ How each entry was checked:
       activity and with the AE index, while period and wavelength shrink
       with solar activity.
   - **Adds:** path parameters that drift, and paths that come and go.
-- **Absorption**: NOAA D-RAP, absorption roughly ∝ f^−1.5
-  [unverified]. **Adds:** sudden ionospheric disturbance fade-outs and
-  polar cap absorption.
+- **Absorption**: NOAA SWPC "Global D-Region Absorption Prediction
+  Documentation" (web page). **[checked]** 2026-11-23:
+  - HAF (1 dB, vertical) = 10·log10(flux, W/m²) + 65 MHz at the sub-solar
+    point, a fit to the forecasters' table M1 → 15, M5 → 20, X1 → 25,
+    X5 → 30 MHz; tapering as cos(χ)^0.75 to the terminator.
+  - Polar cap absorption at 30 MHz: A_d = 0.115·√J(E > 5.2 MeV) dB,
+    A_n = 0.020·√J(E > 2.2 MeV) dB (Sauer and Wilkinson 2008).
+  - A(f) = (f0 / f)^1.5 · A(f0) (Davies 1990; Stonehocker 1970).
+  - Used by the absorption helpers.
 
 ## Measured channels and data
 
