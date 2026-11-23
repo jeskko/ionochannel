@@ -91,13 +91,26 @@ How each entry was checked:
   [TR-87-221](https://its.ntia.gov/publications/download/87-221_ocr.pdf)
   (1987): a review of models and how to validate them.
 - **High latitudes (the DAMSON sounder):**
-  - Angling et al., Radio Science 33:97 (1998): Doppler spread 2–55 Hz
-    and delay spread 1–11 ms on four oblique paths. [abs]
+  - Angling, Cannon, Davies, Willink, Jodalen, Lundborg, Radio Science
+    33(1):97–107 (1998), doi:10.1029/97RS02206. [abs] Abstract, read
+    2026-11-23 on the Birmingham repository page (the paper is
+    paywalled): Doppler spread 2–55 Hz and multipath spread 1–11 ms
+    "exceeded for 5% of time" across four high-latitude paths. It doesn't
+    say which path or condition gives which, or how spread is defined.
+  - Jacobsen, Jodalen, Cannon, Smith, Angling, DAMSON poster (ESA space
+    weather workshop 2), read 2026-11-23: an abstract only. "Large
+    Doppler spreads (tens of Hz) are observed during disturbed conditions
+    (substorms), when the ionospheric reflection point is located within
+    the auroral oval"; long delays (several ms) at midday above the
+    predicted MUF, possibly ground scatter. No tables.
   - Angling's thesis (Leicester): fading correlated between adjacent
     taps and non-Gaussian delay profiles. [abs]
   - Jodalen et al., Radio Science 36 (2001). [abs]
-  - Stocker, Warrington & Siddle, Radio Science 48:638 (2013): polar cap
-    and trough paths through the solar cycle. [abs]
+  - Stocker, Warrington & Siddle, Radio Science 48(5):638–645 (2013),
+    doi:10.1002/2013RS005264: polar cap (Qaanaaq–Ny-Ålesund) and trough
+    (Uppsala and Nurmijärvi–Bruntingthorpe) paths, 2001 and 2009–2012.
+    [abs] The open copy on figshare (Leicester) refused automated
+    fetching on 2026-11-23.
   - **Adds:** "auroral substorm" and "polar cap" presets, and correlated
     taps.
 - **The mid-latitude trough and night-time sporadic E**: Warrington &
@@ -108,15 +121,39 @@ How each entry was checked:
   "post-sunset equatorial" preset.
 - **NVIS and long paths (Vilella, Ads, Hervás et al.)**: Antarctica to
   Spain (Radio Science 2008 and 2012, Remote Sensing 2015), and NVIS
-  (Electronics 9:1037, 2020) with ground wave, Es and F2 given
-  separately. [abs] **Adds:** NVIS with several paths.
+  ("Study of NVIS Channel for USN Protocol Definition in Antarctica",
+  Electronics 9(6):1037, 2020) with Doppler shift and delay spread of
+  ground wave, Es and F2 given separately, near Livingston Island. [abs]
+  MDPI refused automated fetching on 2026-11-23. **Adds:** NVIS with
+  several paths.
 - **Conditions that change over time:**
   - HiCIRF (Adelaide): ray tracing through an ionosphere that changes
     over time, plus scatter.
   - Mikhaleva et al. 2023: travelling ionospheric disturbances (TIDs)
     make Doppler curves sawtooth-shaped and create three-ray regions.
     [abs]
+  - Trop, LaBelle, Erickson, Zhang, McGaw, Kovacs, "Tracking Traveling
+    Ionospheric Disturbances through Doppler-shifted AM radio
+    transmissions", EGUsphere preprint egusphere-2024-2383 (2024; final
+    version Atmos. Meas. Tech. 18:1909, 2025). **[checked]** the preprint,
+    2026-11-23:
+    - Introduction, citing Hernández-Pajares et al. 2012 and Otsuka et
+      al. 2013: MSTIDs have wavelengths of hundreds of km, periods
+      15–60 min and phase speeds 250–1000 m/s; LSTIDs have wavelengths
+      over 1000 km, periods 30–180 min and phase speeds 400–1000 m/s.
+    - Eq. 4: Doppler shift Δf = −2 f v / c, v the layer's vertical
+      velocity, so it scales with the carrier frequency. No HF velocity
+      or Doppler amplitude is given (its data are 0.8–1.6 MHz).
+    - At lower frequencies multiple reflections give "S-shaped features
+      that fold back on themselves" (citing Fišer et al. 2017).
+    - Occurrence: fewest events in summer; LSTIDs peak at the equinoxes,
+      MSTIDs (especially at night) in summer and winter (citing others).
+    - Their measured phase velocities: median 347 m/s, 71–1914 m/s.
   - The stationary Watterson model holds for minutes only.
+  - Oinats et al., Earth Planets Space 68 (2016), doi:10.1186/
+    s40623-016-0390-8: MSTID periods and wavelengths from HF radar
+    against solar activity. [abs] Not reachable on 2026-11-23 (login
+    redirect).
   - **Adds:** path parameters that drift, and paths that come and go.
 - **Absorption**: NOAA D-RAP, absorption roughly ∝ f^−1.5
   [unverified]. **Adds:** sudden ionospheric disturbance fade-outs and
