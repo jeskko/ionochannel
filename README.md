@@ -48,6 +48,42 @@ It works on complex baseband (IQ), or on real audio through the analytic
 signal. On audio, a positive Doppler shift moves the audio up; for LSB
 audio, flip the sign of the shift.
 
+## Modes spread over delay (Vogler & Hoffmeyer)
+
+Spread-F and auroral returns are smeared over delay, not two clean
+paths. Vogler and Hoffmeyer (NTIA Report 92-284, 1992) describe a
+layer-mode by:
+
+- **Delays:** the lowest delay τL, the peak τc and the highest τU;
+- **Doppler:** the shift fs at τc and fsL at τL (the slant seen in
+  measured scattering functions), and the Doppler half-width σD;
+- **Threshold:** s_v, the level (relative to the peak) at which both
+  spreads are measured.
+
+`vh_mode` (Python, Rust `wideband::vh_mode`, CLI `--vh`) turns a mode
+into 33 taps across τL…τU:
+
+- **Power over delay:** T(τ) = A·exp(α(ln g + 1 − g)), with
+  g = (τ − τℓ)/(τc − τℓ) (eq. 8b). α and τℓ follow from the appendix, so
+  T falls to s_v·A at τL and τU.
+- **Doppler shift:** fs + b(τ − τc), with b = (fs − fsL)/(τc − τL).
+- **Doppler spectrum:** Gaussian, falling to s_v at ±σD (eq. 7a), so in
+  F.1487 terms the spread is σD·(−ln s_v/π)^−½·√(2/π).
+
+The taps then go through the ordinary channel; `normalize` scales a set
+of modes to a total power of 1. The report's Table 1 gives the values it
+used to reproduce measurements on an 88 km auroral path near Fairbanks,
+for example moderate spread-F at 5.3 MHz: σT = 1600 µs, σc = 300 µs,
+σD = 4 Hz, fs = −0.65 Hz, fsL = −0.8 Hz. It gives no value for s_v,
+which sets where the edges are measured, so choose it yourself. There
+are no presets from it, and the Lorentzian Doppler shape (eq. 7b) is
+not implemented.
+
+```python
+modes = ic.normalize(ic.vh_mode(1e-3, 1600e-6, 300e-6, -0.65, -0.8, 4.0, threshold=0.1))
+y = ic.Channel(48000, modes).apply(x, rng)
+```
+
 ## Conditions that change over time
 
 The Watterson model is stationary, and measured channels stay so for
@@ -570,6 +606,11 @@ Paths that change ([`tests/vary.rs`](tests/vary.rs),
   0.01 rad. A moving delay held still matches the FFT delay.
 - **Drift:** the rms is within 10 %.
 - **Table:** a replayed record is followed to 0.01 Hz.
+- **Vogler & Hoffmeyer modes** ([`tests/wideband.rs`](tests/wideband.rs),
+  [`python/tests/test_wideband.py`](python/tests/test_wideband.py)): the
+  delay shape is s_v at τL and τU and 1 at τc; the shift at τL is fsL;
+  the Doppler spectrum is s_v at ±σD; the tap powers integrate T within
+  1 %; a normalized mode passes white noise at unit power within 5 %.
 - **Absorption:** D-RAP's highest affected frequency is exact at M1 and
   X1; 1 dB at the HAF; the (f0 / f)^1.5 scaling; polar cap absorption at
   30 MHz; a flare record dims a path as computed.
@@ -657,6 +698,11 @@ Paths that change ([`tests/vary.rs`](tests/vary.rs),
   0.01 rad. A moving delay held still matches the FFT delay.
 - **Drift:** the rms is within 10 %.
 - **Table:** a replayed record is followed to 0.01 Hz.
+- **Vogler & Hoffmeyer modes** ([`tests/wideband.rs`](tests/wideband.rs),
+  [`python/tests/test_wideband.py`](python/tests/test_wideband.py)): the
+  delay shape is s_v at τL and τU and 1 at τc; the shift at τL is fsL;
+  the Doppler spectrum is s_v at ±σD; the tap powers integrate T within
+  1 %; a normalized mode passes white noise at unit power within 5 %.
 - **Absorption:** D-RAP's highest affected frequency is exact at M1 and
   X1; 1 dB at the HAF; the (f0 / f)^1.5 scaling; polar cap absorption at
   30 MHz; a flare record dims a path as computed.
@@ -717,8 +763,10 @@ synthetic tests for CW and FSK decoders. Background for each item is in
    2013, Angling et al. 1998). Still to do: equatorial spread-F, and NVIS
    with ground wave, sporadic E and F2 as separate paths (the paper
    found doesn't give usable numbers).
-8. **A wideband mode** (Vogler & Hoffmeyer) for signals wider than about
-   12 kHz.
+8. **Wideband modes:** done (Vogler & Hoffmeyer layer-modes spread over
+   delay, as taps). Not done: their Lorentzian Doppler shape, and
+   delay dispersion across a very wide band (group delay changing with
+   frequency, from their sech² layer profile).
 9. **Absorption events:** done (D-RAP flare and polar cap absorption
    from flux records).
 

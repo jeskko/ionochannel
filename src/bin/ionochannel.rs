@@ -30,6 +30,10 @@ const USAGE: &str =
   --path D,S[,F[,P]]      a Rayleigh path: delay ms, spread Hz (2 sigma), shift Hz, power
                           (repeat for more paths; powers default to equal shares)
   --specular D,P[,F]      a steady path: delay ms, power, shift Hz
+  --vh TL,ST,SC,FS,FSL,SD,SV[,A]  a layer-mode spread over delay (Vogler & Hoffmeyer 1992):
+                          lowest delay, total and peak spreads (ms), Doppler shift at the
+                          peak and at the lowest delay, Doppler half-width (Hz), threshold
+                          s_v (0-1) at which the spreads are measured, peak amplitude [1]
   --tid F,KM,REL,MIN[,DEG]  a travelling ionospheric disturbance on every path: carrier MHz,
                           path km, relative amplitude of the path (0.03-0.08 typical),
                           period minutes (60-100 typical), phase degrees; moves delay and
@@ -251,6 +255,23 @@ fn main() {
                     v.get(3).copied().unwrap_or(f64::NAN),
                     v[1],
                     v.get(2).copied().unwrap_or(0.0),
+                ));
+            }
+            "--vh" => {
+                let v = nums(&val("--vh"), 7, 8, "--vh");
+                if !(v[1] > 0.0 && v[2] > 0.0 && 2.0 * v[2] < v[1] && v[6] > 0.0 && v[6] < 1.0) {
+                    die("--vh: need 0 < SC < ST / 2 and 0 < SV < 1");
+                }
+                explicit_power = true;
+                paths.extend(ionochannel::wideband::vh_mode(
+                    v[0] * 1e-3,
+                    v[1] * 1e-3,
+                    v[2] * 1e-3,
+                    v[3],
+                    v[4],
+                    v[5],
+                    v[6],
+                    v.get(7).copied().unwrap_or(1.0),
                 ));
             }
             "--specular" => {

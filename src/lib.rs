@@ -33,6 +33,7 @@ pub mod rng;
 pub mod stations;
 pub mod vary;
 pub mod wav;
+pub mod wideband;
 
 pub use channel::{Channel, PathSpec, RealChannel};
 pub use fading::Component;

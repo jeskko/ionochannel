@@ -83,6 +83,14 @@ How each entry was checked:
     path.
   - **Adds:** spread-F and auroral shapes, and signals wider than
     12 kHz.
+  - TR-92-284 (Part III) **[checked]** 2026-11-23: transfer function eq.
+    5–8 (delay shape T(τ) = A·e^{α(ln g+1−g)}, slant f_B = fs + b(τ−τc),
+    Gaussian ζ = πσf²t with σf = σD(−ln s_v/π)^−½ or Lorentzian), the
+    appendix's conditions for α and τℓ, and Table 1 (Fairbanks 88 km
+    path, May 1988: σT 22–1600 µs, σc 10.7–300 µs, σD 0.1–9 Hz). The
+    threshold s_v isn't given. Used for `vh_mode`. TR-88-240 (Part I)
+    fetched; it describes the deterministic delay-frequency model (sech²
+    profile), not yet used.
 - **Mastrangelo et al.**, IEEE Trans. Commun. 45(1) 1997: a real-time
   wideband simulator (V&H + noise + interference, > 1 MS/s); NTIA
   [98-348](https://its.ntia.gov/publications/download/98-348_ocr.pdf).
