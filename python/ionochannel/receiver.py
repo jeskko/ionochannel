@@ -64,6 +64,27 @@ def _agc(z: np.ndarray, fs: float, a: Agc) -> np.ndarray:
     return gain.reshape(*z.shape[:-1], nb * b)[..., :n]
 
 
+def _agc_gains_row(p: np.ndarray, target: float, att: float, dec: float, hb: int, floor: float) -> np.ndarray:
+    """agc_gains for one row, on plain floats (numpy per block is slow
+    on a single row)."""
+    pl = p.tolist()
+    level = max(pl[0], floor)
+    hang = 0
+    g = [target / level]
+    for pk in pl[1:]:
+        if pk > level:
+            level += (pk - level) * att
+            hang = hb
+        elif hb > 0 and pk >= level * HANG_REARM:
+            hang = hb
+        elif hang > 0:
+            hang -= 1
+        else:
+            level = max(level * dec, pk, floor)
+        g.append(target / max(level, floor))
+    return np.array(g, p.dtype)
+
+
 def agc_gains(p: np.ndarray, fs: float, a: Agc) -> np.ndarray:
     """The AGC's gain at the end of each block (..., nb) from the blocks'
     peak envelopes p (..., nb). Shared by the numpy and torch receivers."""
@@ -73,6 +94,8 @@ def agc_gains(p: np.ndarray, fs: float, a: Agc) -> np.ndarray:
     dec = np.exp(-dt / a.decay_s) if a.decay_s > 0 else 0.0
     hb = int(round(a.hang_s / dt))
     floor = a.target / 10 ** (a.max_gain_db / 20)
+    if p.ndim == 1:
+        return _agc_gains_row(p, a.target, att, dec, hb, floor)
     level = np.maximum(p[..., 0], floor)
     hang = np.zeros(level.shape, np.int64)
     g = np.empty_like(p)
