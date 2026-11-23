@@ -190,6 +190,15 @@ folding it back. The defaults are illustrative.
   - Level: carrier power.
   - Run the whole AM signal as IQ through the channel and you get
     selective fading across its 9 kHz.
+- **RTTY** (`rtty`, `Rtty`): amateur RTTY, 45.45 baud, 170 Hz shift,
+  mark the upper tone. Continuous-phase FSK. Each character is a start
+  bit (space), 5 random data bits and 1.5 stop bits (mark), back to back.
+  Level: its (constant) power.
+- **PSK31** (`psk31`, `Psk31`): BPSK at 31.25 baud. A 0 bit reverses the
+  phase through a cosine-shaped zero, and a 1 bit holds it. The data are
+  random Varicode-like words (starting and ending with 1, no 00 inside),
+  separated by 00. Idle, all zeros, gives two tones at ±15.625 Hz. Level:
+  peak power.
 - **Carrier:** use `smps`/`--carrier` with no ripple and one line.
 - **Radar** (`radar`, `Radar`): FMCW, linear up-sweeps of `sweep_hz`
   (20 kHz) centred on the offset, `rate_hz` (50) a second. A sweep
@@ -335,6 +344,7 @@ ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav ou
   arcing buzz at an SNR in `--bw`. `--mains HZ` sets 50 or 60 Hz for
   both.
 - **Stations** (each can be repeated): `--cw DB,F[,WPM]`, `--am DB,F`,
+  `--rtty DB,F`, `--psk31 DB,F`,
   `--carrier DB,F`, `--radar DB,F[,SWEEP_HZ,RATE_HZ]`. The stations don't
   go through the channel; each is added after it, at its own level.
 - **Changes over time:** `--tid F_MHZ,KM,REL,MIN[,DEG]` puts the same TID
@@ -498,6 +508,10 @@ Stations are tested against their parameters
   beyond the audio bandwidth; on real audio the lower sideband below
   0 Hz is dropped, not folded.
 - **Radar:** sweep rate within 1 %; in-band time as expected.
+- **RTTY:** constant envelope, over 99.9 % of samples at the mark or
+  space tone, tone changes on the half-bit grid.
+- **PSK31:** idle gives two tones of amplitude 0.5 at ±15.625 Hz and no
+  carrier; data have peak 1, dips to zero, and mean power 0.6–0.95.
 
 Paths that change ([`tests/vary.rs`](tests/vary.rs),
 [`python/tests/test_vary.py`](python/tests/test_vary.py)):
@@ -573,6 +587,10 @@ Stations are tested against their parameters
   beyond the audio bandwidth; on real audio the lower sideband below
   0 Hz is dropped, not folded.
 - **Radar:** sweep rate within 1 %; in-band time as expected.
+- **RTTY:** constant envelope, over 99.9 % of samples at the mark or
+  space tone, tone changes on the half-bit grid.
+- **PSK31:** idle gives two tones of amplitude 0.5 at ±15.625 Hz and no
+  carrier; data have peak 1, dips to zero, and mean power 0.6–0.95.
 
 Paths that change ([`tests/vary.rs`](tests/vary.rs),
 [`python/tests/test_vary.py`](python/tests/test_vary.py)):
@@ -631,9 +649,9 @@ synthetic tests for CW and FSK decoders. Background for each item is in
 2. **Impulsive atmospheric noise:** done, calibrated to P.372 Vd.
    **Man-made interference:** switching-supply combs and powerline
    arcing done. Still to do: VDSL, powerline OFDM bursts, LED drivers.
-3. **Interfering stations:** CW, carriers, AM stations and sweeping
-   radars done. Still to do: data modes, and a statistical population of
-   stations per band (Mendieta-Otero et al. 2014).
+3. **Interfering stations:** CW, carriers, AM, radar, RTTY and PSK31
+   done. Still to do: a statistical population of stations per band
+   (Mendieta-Otero et al. 2014).
 4. **Recorded noise:** done.
 5. **PyTorch backend:** done.
 6. **Conditions that change over time:** done (ramps, sines, drift,

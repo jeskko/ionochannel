@@ -16,9 +16,9 @@
 
 use ionochannel::vary::tid;
 use ionochannel::{
-    Agc, Am, AmSpec, Arcing, ArcingSpec, Channel, Clock, Component, Cw, CwSpec, PathSpec, Qrn,
-    Radar, RadarSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Recorded, Rng, Smps,
-    SmpsSpec, Term, Vary, noise, presets, qrn, wav,
+    Agc, Am, AmSpec, Arcing, ArcingSpec, Channel, Clock, Component, Cw, CwSpec, PathSpec, Psk31,
+    Psk31Spec, Qrn, Radar, RadarSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Recorded,
+    Rng, Rtty, RttySpec, Smps, SmpsSpec, Term, Vary, noise, presets, qrn, wav,
 };
 use num_complex::Complex32;
 use std::process::exit;
@@ -48,6 +48,8 @@ const USAGE: &str =
   --am DB,F               AM broadcast, speech-like audio to 4.5 kHz; DB is carrier power
   --carrier DB,F          a steady carrier, drifting slowly
   --radar DB,F[,SW,RATE]  FMCW radar: SW Hz sweeps [20000], RATE a second [50]
+  --rtty DB,F             RTTY, 45.45 baud, 170 Hz shift, centred on F
+  --psk31 DB,F            PSK31, random Varicode-like words; DB is peak power
   --noise-file PATH,DB    mix in a noise recording (WAV at the same rate; mono for audio, I/Q
                           for I/Q), looped from a random start, at an SNR in --bw
   --noise-band LO,HI      band its level is measured in [300,2700 audio; +-0.45 fs I/Q]
@@ -88,6 +90,8 @@ fn nums(s: &str, min: usize, max: usize, what: &str) -> Vec<f64> {
 
 #[derive(Debug)]
 enum Kind {
+    Rtty,
+    Psk31,
     Cw(f64),
     Am,
     Carrier,
@@ -122,6 +126,8 @@ impl Station {
                 Cw::new(fs, self.f, &spec, true, seed).add_r(x, p)
             }
             Kind::Am => Am::new(fs, self.f, &AmSpec::default(), true, seed).add_r(x, p),
+            Kind::Rtty => Rtty::new(fs, self.f, &RttySpec::default(), true, seed).add_r(x, p),
+            Kind::Psk31 => Psk31::new(fs, self.f, &Psk31Spec::default(), true, seed).add_r(x, p),
             Kind::Carrier => Smps::new(fs, self.f, &carrier_spec(), true, seed).add_r(x, p),
             Kind::Radar(sweep_hz, rate_hz) => {
                 let spec = RadarSpec {
@@ -145,6 +151,8 @@ impl Station {
                 Cw::new(fs, self.f, &spec, false, seed).add_c(x, p)
             }
             Kind::Am => Am::new(fs, self.f, &AmSpec::default(), false, seed).add_c(x, p),
+            Kind::Rtty => Rtty::new(fs, self.f, &RttySpec::default(), false, seed).add_c(x, p),
+            Kind::Psk31 => Psk31::new(fs, self.f, &Psk31Spec::default(), false, seed).add_c(x, p),
             Kind::Carrier => Smps::new(fs, self.f, &carrier_spec(), false, seed).add_c(x, p),
             Kind::Radar(sweep_hz, rate_hz) => {
                 let spec = RadarSpec {
@@ -281,6 +289,22 @@ fn main() {
                 let v = nums(&val("--am"), 2, 2, "--am");
                 stations.push(Station {
                     kind: Kind::Am,
+                    db: v[0],
+                    f: v[1],
+                });
+            }
+            "--rtty" => {
+                let v = nums(&val("--rtty"), 2, 2, "--rtty");
+                stations.push(Station {
+                    kind: Kind::Rtty,
+                    db: v[0],
+                    f: v[1],
+                });
+            }
+            "--psk31" => {
+                let v = nums(&val("--psk31"), 2, 2, "--psk31");
+                stations.push(Station {
+                    kind: Kind::Psk31,
                     db: v[0],
                     f: v[1],
                 });
