@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ionochannel"
+version = "0.1.0"
+description = "HF ionospheric channel simulator: Watterson / ITU-R F.1487 fading, noise and interference for testing and training"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+packages = ["ionochannel"]
+
+[tool.setuptools.package-data]
+ionochannel = ["presets.json"]

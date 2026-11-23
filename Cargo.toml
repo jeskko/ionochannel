@@ -1,0 +1,17 @@
+[package]
+name = "ionochannel"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "HF ionospheric channel simulator: Watterson / ITU-R F.1487 fading, noise and interference for testing and training"
+readme = "README.md"
+keywords = ["hf", "radio", "channel", "simulator", "watterson"]
+categories = ["simulation", "science"]
+include = ["src/**", "tests/**", "python/ionochannel/presets.json", "README.md", "LICENSE"]
+
+[dependencies]
+num-complex = "0.4"
+serde_json = "1"
+
+[profile.test]
+opt-level = 3
