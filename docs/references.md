@@ -159,8 +159,20 @@ How each entry was checked:
   spreads of greater than 20 Hz were not uncommon"; spatial correlation
   down to 50 m and frequency coherence bandwidth to about 1 kHz. No
   definitions or delay spreads readable, so no preset. OSTI 329722 gave
-  HTTP 404. **Adds:** a "post-sunset equatorial" preset, given a better
-  source.
+  HTTP 404.
+  - Fitzgerald, "Channel probe measurements for the American Sector
+    Clutter Experiment, January 1994", LA-UR-94-1811 (OSTI 10156838),
+    read 2026-11-23: Piura–Arequipa (Peru) across the magnetic
+    equator, 12.87–13.37 MHz CW and an FMCW probe (2.5 ms delay window).
+    Qualitative only: Doppler and delay spread grow after spread-F onset;
+    about one hour analysed, no statistics.
+  - Fitzgerald, Radio Science 34 (1999), doi:10.1029/1998RS900013, is the
+    statistical paper. A search summary (not the source) gives Doppler
+    spread above 6 Hz at −10 dB and above 15 Hz at −30 dB on half the
+    evenings, and coherence bandwidths under 1.5 kHz. Wiley and IEEE
+    refused automated fetching on 2026-11-23, so it is unchecked and
+    unused.
+  **Adds:** a "post-sunset equatorial" preset, given the 1999 paper.
 - **NVIS and long paths (Vilella, Ads, Hervás et al.)**: Antarctica to
   Spain (Radio Science 2008 and 2012, Remote Sensing 2015), and NVIS
   ("Study of NVIS Channel for USN Protocol Definition in Antarctica",
@@ -176,6 +188,12 @@ How each entry was checked:
   - The summary table: skywave delay spread at most 2.75 ms, at least
     0.05 ms; Doppler spread at most 0.1 Hz; Doppler shift −17.5 Hz at
     most. With ground wave the delay spread reaches 5.5 ms.
+  - Dear et al., "Ionospheric channel impulse response measurement system
+    for NVIS propagation mode over Java Island based on low-cost SDR
+    platform", Radio Science (2024), doi:10.1029/2023RS007877. A search
+    summary (not the source) gives delay spread 0–1.3 ms (mean about
+    0.46 ms) and Doppler shifts 0.7–1.1 Hz. Wiley refused fetching on
+    2026-11-23; unchecked and unused.
   - Not used for a preset. An rms spread of 2.75 ms doesn't fit E and
     F2 at 120 and 310 km. −17.5 Hz looks like an offset between the
     radios. Mode powers aren't given.
@@ -281,6 +299,10 @@ How each entry was checked:
 - **Occupancy**:
   - The Laycock–Gott congestion model (Pantjiaros et al., IEE
     Proc.-Commun. 1998). [abs]
+  - Economou et al., "Models of HF spectral occupancy over a sunspot
+    cycle", IEE Proc.-Commun. 152(6):980–988 (2005), doi:10.1049/
+    ip-com:20045104: the coefficients behind Mendieta-Otero et al.'s
+    levels. No open copy found on 2026-11-23 (IET Digital Library only).
   - **Mendieta-Otero, Pérez-Álvarez, Pérez-Díaz**, "Interference
     simulator for the whole HF band: application to CW-Morse", IEEE TEMC
     56(3) 2014 ([arXiv 2402.04742](https://arxiv.org/abs/2402.04742)).
@@ -298,7 +320,11 @@ How each entry was checked:
     - Used for `population` (rate left to the user).
   - **Pederick & Cervera**, "Modeling the interference environment in
     the HF band", Radio Science 51:82 (2016): the transmitter database,
-    ray tracing and absorption set the interferers' levels.
+    ray tracing and absorption set the interferers' levels. The DST Group
+    copy refused curl on 2026-11-23.
+- **DTIC ADA277877**: an older wideband HF probe report with rms Doppler
+  and delay spread statistics (per a search summary). DTIC refused
+  fetching on 2026-11-23.
 - **Sferic waveforms**: nothing focused found yet.
 
 ## Validation methods
