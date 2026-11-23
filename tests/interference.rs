@@ -2,7 +2,7 @@
 //! and FM, drift, arcing power, mains lock and gating, streaming.
 
 use ionochannel::interference::smps_lines;
-use ionochannel::{Arcing, ArcingSpec, Smps, SmpsSpec};
+use ionochannel::{Arcing, ArcingSpec, Bursts, BurstsSpec, Smps, SmpsSpec};
 use num_complex::{Complex32, Complex64};
 use std::f64::consts::TAU;
 
@@ -184,4 +184,27 @@ fn streaming() {
         s.add_r(c, 1.0);
     }
     assert_eq!(a, b);
+}
+
+#[test]
+fn bursts_duty_on_time_and_level() {
+    let spec = BurstsSpec::default();
+    let mut z = vec![Complex32::default(); (FS * 240.0) as usize];
+    Bursts::new(FS, &spec, 9).add_c(&mut z, 1.0);
+    let on: Vec<bool> = z.iter().map(|v| v.norm() > 0.0).collect();
+    let duty = on.iter().filter(|&&b| b).count() as f64 / on.len() as f64;
+    assert!((duty - 2.0 / 22.0).abs() < 0.01, "duty {duty}");
+    let p = z.iter().map(|v| v.norm_sqr() as f64).sum::<f64>() / (duty * z.len() as f64);
+    assert!((p - 1.0).abs() < 0.02, "power while on {p}");
+    let (mut runs, mut len) = (Vec::new(), 0usize);
+    for &b in &on[1..] {
+        if b {
+            len += 1;
+        } else if len > 0 {
+            runs.push(len);
+            len = 0;
+        }
+    }
+    let mean = runs[1..].iter().sum::<usize>() as f64 / (runs.len() - 1) as f64 / FS;
+    assert!((mean / 0.002 - 1.0).abs() < 0.05, "mean on {mean}");
 }

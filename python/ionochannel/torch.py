@@ -26,7 +26,7 @@ import numpy as np
 import torch
 
 from .channel import MIN_LOW_RATE, OVERSAMPLE, TAU, Component, Path, fast_len, scatter, specular  # noqa: F401
-from .interference import Arcing, Smps, smps_lines
+from .interference import Arcing, Bursts, Smps, smps_lines
 from .noise import ALPHA as QRN_ALPHA
 from .noise import TAUS as QRN_TAUS
 from .noise import VD_GAUSS, qrn_params, vd_bandwidth  # noqa: F401
@@ -558,6 +558,26 @@ def arcing(x, snr_db, fs, gen, spec: Arcing = Arcing(), bw_hz: float = 2500.0, s
     var = _noise_var(xr, snr_db, fs, bw_hz, signal_power, rows)
     rt = _rtype(_ctype(x))
     nz = arcing_noise(rows, x.shape[-1], fs, gen, spec, x.is_complex(), rt)
+    return (xr + nz * torch.sqrt(var).to(rt)).to(x.dtype).reshape(x.shape)
+
+
+def bursts_noise(shape, n: int, fs: float, gen, spec: Bursts = Bursts(), complex_: bool = True,
+                 dtype=torch.float32) -> torch.Tensor:
+    """Noise of power 1 while on, 0 while off, (*shape, n)."""
+    shape = tuple(shape) if np.iterable(shape) else (shape,)
+    rows = int(np.prod(shape))
+    g = _gate(rows, n, fs, spec.on_s, spec.off_s, gen, gen.device)
+    ct = torch.complex128 if dtype == torch.float64 else torch.complex64
+    w = _crandn((rows, n), gen, gen.device, ct) if complex_ else _randn((rows, n), gen, gen.device, dtype)
+    return (w * g).reshape(*shape, n)
+
+
+def bursts(x, snr_db, fs, gen, spec: Bursts = Bursts(), bw_hz: float = 2500.0, signal_power=None):
+    """x plus noise bursts at snr_db in bw_hz while on (as awgn)."""
+    xr, shape, rows = _rows(x)
+    var = _noise_var(xr, snr_db, fs, bw_hz, signal_power, rows)
+    rt = _rtype(_ctype(x))
+    nz = bursts_noise(rows, x.shape[-1], fs, gen, spec, x.is_complex(), rt)
     return (xr + nz * torch.sqrt(var).to(rt)).to(x.dtype).reshape(x.shape)
 
 

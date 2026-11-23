@@ -12,6 +12,12 @@ defaults here are illustrative, not measured):
   each mains half-cycle (one phase per source), with timing jitter and
   log-normal burst energies, gated on and off over seconds. Level: mean
   power as an SNR in a reference bandwidth, as for awgn().
+- bursts(): noise switched on and off at random (exponential on and off
+  times), for packet transmitters such as powerline networking seen in a
+  narrow band. Level: SNR while on.
+
+VDSL in a 3 kHz window is a steady raised noise floor (use awgn), and
+LED drivers are switching supplies (use smps).
 
 Each leading index of x gets its own realisation. The Rust crate's
 interference module implements the same models.
@@ -191,4 +197,38 @@ def arcing(x: np.ndarray, snr_db, fs: float, rng, spec: Arcing = Arcing(), bw_hz
     complex_ = np.iscomplexobj(x)
     var = p / 10 ** (snr / 10) * (fs if complex_ else fs / 2) / bw_hz
     nz = arcing_noise(x.shape[:-1], x.shape[-1], fs, rng, spec, complex_)
+    return (x + nz * np.sqrt(var)).astype(x.dtype)
+
+
+@dataclass(frozen=True)
+class Bursts:
+    """Gated noise bursts (powerline networking and other packet
+    transmitters seen in a narrow band): exponential on and off times."""
+    on_s: float = 0.002
+    off_s: float = 0.02
+
+
+def bursts_noise(shape, n: int, fs: float, rng, spec: Bursts = Bursts(), complex_: bool = True) -> np.ndarray:
+    """Noise of power 1 while on, 0 while off, (*shape, n)."""
+    shape = tuple(shape) if np.iterable(shape) else (shape,)
+    rows = int(np.prod(shape))
+    g = _gate(rows, n, fs, spec.on_s, spec.off_s, rng)
+    if complex_:
+        w = (rng.standard_normal((rows, n)) + 1j * rng.standard_normal((rows, n))) * math.sqrt(0.5)
+    else:
+        w = rng.standard_normal((rows, n))
+    return (w * g).reshape(*shape, n)
+
+
+def bursts(x: np.ndarray, snr_db, fs: float, rng, spec: Bursts = Bursts(), bw_hz: float = 2500.0,
+           signal_power=None) -> np.ndarray:
+    """x plus noise bursts at snr_db in bw_hz while on (as awgn)."""
+    x = np.asarray(x)
+    p = np.mean(np.abs(x) ** 2, axis=-1, keepdims=True) if signal_power is None else np.asarray(signal_power, float)
+    snr = np.asarray(snr_db, float)
+    if snr.ndim and snr.shape[-1] != 1:
+        snr = snr[..., None]
+    complex_ = np.iscomplexobj(x)
+    var = p / 10 ** (snr / 10) * (fs if complex_ else fs / 2) / bw_hz
+    nz = bursts_noise(x.shape[:-1], x.shape[-1], fs, rng, spec, complex_)
     return (x + nz * np.sqrt(var)).astype(x.dtype)

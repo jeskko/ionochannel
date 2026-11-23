@@ -10,6 +10,11 @@
 //! - [`Arcing`]: powerline arcing buzz. Short noise bursts at a fixed
 //!   phase of each mains half-cycle (one phase per source), with timing
 //!   jitter and log-normal burst energies, gated on and off.
+//! - [`Bursts`]: noise switched on and off at random, for packet
+//!   transmitters such as powerline networking seen in a narrow band.
+//!
+//! VDSL in a 3 kHz window is a steady raised noise floor (white noise),
+//! and LED drivers are switching supplies ([`Smps`]).
 
 use crate::rng::Rng;
 use num_complex::Complex32;
@@ -295,6 +300,90 @@ impl Arcing {
         for v in x {
             let s = (self.envelope() * variance).sqrt();
             *v += (self.rng.normal() * s) as f32;
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BurstsSpec {
+    /// Mean on time (s), exponential.
+    pub on_s: f64,
+    /// Mean off time (s), exponential.
+    pub off_s: f64,
+}
+
+impl Default for BurstsSpec {
+    fn default() -> Self {
+        BurstsSpec {
+            on_s: 0.002,
+            off_s: 0.02,
+        }
+    }
+}
+
+/// Noise switched on and off at random: packet transmitters such as
+/// powerline networking seen in a narrow band. Power 1 while on.
+pub struct Bursts {
+    rng: Rng,
+    spec: BurstsSpec,
+    fs: f64,
+    on: bool,
+    left: i64,
+}
+
+impl Bursts {
+    pub fn new(fs: f64, spec: &BurstsSpec, seed: u64) -> Self {
+        let mut rng = Rng::new(seed);
+        let duty = spec.on_s / (spec.on_s + spec.off_s);
+        let on = rng.uniform() < duty;
+        let mut b = Bursts {
+            rng,
+            spec: spec.clone(),
+            fs,
+            on,
+            left: 0,
+        };
+        b.left = b.hold();
+        b
+    }
+
+    fn hold(&mut self) -> i64 {
+        let mean = if self.on {
+            self.spec.on_s
+        } else {
+            self.spec.off_s
+        };
+        (-(1.0 - self.rng.uniform()).ln() * mean * self.fs) as i64 + 1
+    }
+
+    fn gate(&mut self) -> bool {
+        let g = self.on;
+        self.left -= 1;
+        if self.left <= 0 {
+            self.on = !self.on;
+            self.left = self.hold();
+        }
+        g
+    }
+
+    /// Adds bursts of power `variance` while on.
+    pub fn add_c(&mut self, x: &mut [Complex32], variance: f64) {
+        let s = variance.sqrt() as f32;
+        for v in x {
+            let w = self.rng.complex_normal();
+            if self.gate() {
+                *v += w * s;
+            }
+        }
+    }
+
+    pub fn add_r(&mut self, x: &mut [f32], variance: f64) {
+        let s = variance.sqrt();
+        for v in x {
+            let w = self.rng.normal();
+            if self.gate() {
+                *v += (w * s) as f32;
+            }
         }
     }
 }

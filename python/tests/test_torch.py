@@ -199,6 +199,12 @@ def test_rtty_psk31():
     assert abs(a(984.375) - 0.5) < 0.01 and abs(a(1015.625) - 0.5) < 0.01 and a(1000) < 0.01
 
 
+def test_bursts():
+    z = np_(ict.bursts_noise(4, int(12000 * 60), 12000.0, gen(22), ic.Bursts()))
+    on = np.abs(z) > 0
+    assert abs(on.mean() - 2 / 22) < 0.01 and abs(np.mean(np.abs(z[on]) ** 2) - 1) < 0.02
+
+
 if __name__ == "__main__":
     if torch is None:
         print("skip: no torch")

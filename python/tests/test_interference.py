@@ -75,6 +75,24 @@ def test_arcing_gate_and_level():
     assert abs(np.mean(y ** 2) / np.mean(w ** 2) - 1) < 0.1
 
 
+def test_bursts_duty_and_level():
+    spec = ic.Bursts(on_s=0.002, off_s=0.02)
+    z = ic.bursts_noise(4, int(FS * 60), FS, np.random.default_rng(9), spec)
+    on = np.abs(z) > 0
+    assert abs(on.mean() - 2 / 22) < 0.01, on.mean()
+    assert abs(np.mean(np.abs(z[on]) ** 2) - 1) < 0.02
+    # mean length of the on runs (inside the record)
+    lens = []
+    for r in on:
+        e = np.flatnonzero(np.diff(r.astype(int)))
+        starts, ends = e[r[e + 1]] + 1, e[~r[e + 1]] + 1
+        if len(ends) and len(starts) and ends[0] < starts[0]:
+            ends = ends[1:]
+        k = min(len(starts), len(ends))
+        lens += list(ends[:k] - starts[:k])
+    assert abs(np.mean(lens) / FS / 0.002 - 1) < 0.05, np.mean(lens) / FS
+
+
 if __name__ == "__main__":
     bad = 0
     for name, fn in sorted(globals().items()):

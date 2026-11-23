@@ -36,7 +36,7 @@ pub mod wav;
 
 pub use channel::{Channel, PathSpec, RealChannel};
 pub use fading::Component;
-pub use interference::{Arcing, ArcingSpec, Smps, SmpsSpec};
+pub use interference::{Arcing, ArcingSpec, Bursts, BurstsSpec, Smps, SmpsSpec};
 pub use qrn::Qrn;
 pub use receiver::{Agc, Clock, RealReceiver, Receiver, ReceiverSpec};
 pub use recorded::Recorded;

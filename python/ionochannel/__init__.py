@@ -15,7 +15,7 @@ the Rust crate; the statistics are the same (both test against theory).
 """
 from .channel import Channel, Component, Path, awgn, power, scatter, specular, tap_gain
 from .presets import names, preset, presets
-from .interference import Arcing, Smps, arcing, arcing_noise, smps, smps_noise
+from .interference import Arcing, Bursts, Smps, arcing, arcing_noise, bursts, bursts_noise, smps, smps_noise
 from .noise import qrn, qrn_noise, vd_bandwidth
 from .receiver import Agc, Receiver, bandpass_taps, clock_offset
 from .recorded import band_density, mix_noise, read_wav, recorded_noise, resample
@@ -25,7 +25,7 @@ from .stations import (Am, Cw, Psk31, Radar, Rtty, am, am_noise, cw, cw_noise, p
 
 __all__ = ["Channel", "Component", "Path", "awgn", "power", "scatter", "specular", "tap_gain", "names", "preset", "presets",
            "Agc", "Receiver", "bandpass_taps", "clock_offset", "qrn", "qrn_noise", "vd_bandwidth",
-           "Arcing", "Smps", "arcing", "arcing_noise", "smps", "smps_noise",
+           "Arcing", "Smps", "arcing", "arcing_noise", "smps", "smps_noise", "Bursts", "bursts", "bursts_noise",
            "Am", "Cw", "Radar", "am", "am_noise", "cw", "cw_noise", "radar", "radar_noise", "speech_like",
            "Psk31", "Rtty", "psk31", "psk31_noise", "rtty", "rtty_noise",
            "band_density", "mix_noise", "read_wav", "recorded_noise", "resample",
