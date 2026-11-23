@@ -53,7 +53,11 @@ def morse_units(text: str) -> list[tuple[bool, int]]:
 
 
 def random_text(rng, words: int = 20) -> str:
-    return " ".join("".join(rng.choice(list(GROUP_CHARS), rng.integers(2, 7))) for _ in range(words))
+    """Random groups of 2-6 characters."""
+    lens = rng.integers(2, 7, words)
+    chars = np.array(list(GROUP_CHARS))[rng.integers(0, len(GROUP_CHARS), int(lens.sum()))]
+    cuts = np.cumsum(lens)[:-1]
+    return " ".join("".join(w) for w in np.split(chars, cuts))
 
 
 def _edges(key: np.ndarray, rise: int) -> np.ndarray:

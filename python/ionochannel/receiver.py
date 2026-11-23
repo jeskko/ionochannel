@@ -57,6 +57,17 @@ def _agc(z: np.ndarray, fs: float, a: Agc) -> np.ndarray:
     env = np.zeros((*z.shape[:-1], nb * b))
     env[..., :n] = np.abs(z)
     p = env.reshape(*z.shape[:-1], nb, b).max(axis=-1)
+    g = agc_gains(p, fs, a)
+    prev = np.concatenate([g[..., :1], g[..., :-1]], axis=-1)
+    ramp = np.arange(1, b + 1) / b
+    gain = prev[..., None] + (g - prev)[..., None] * ramp
+    return gain.reshape(*z.shape[:-1], nb * b)[..., :n]
+
+
+def agc_gains(p: np.ndarray, fs: float, a: Agc) -> np.ndarray:
+    """The AGC's gain at the end of each block (..., nb) from the blocks'
+    peak envelopes p (..., nb). Shared by the numpy and torch receivers."""
+    b = agc_block(fs)
     dt = b / fs
     att = 1 - np.exp(-dt / a.attack_s) if a.attack_s > 0 else 1.0
     dec = np.exp(-dt / a.decay_s) if a.decay_s > 0 else 0.0
@@ -66,7 +77,7 @@ def _agc(z: np.ndarray, fs: float, a: Agc) -> np.ndarray:
     hang = np.zeros(level.shape, np.int64)
     g = np.empty_like(p)
     g[..., 0] = a.target / level
-    for k in range(1, nb):
+    for k in range(1, p.shape[-1]):
         pk = p[..., k]
         up = pk > level
         rearm = (hb > 0) & ~up & (pk >= level * HANG_REARM)
@@ -76,10 +87,7 @@ def _agc(z: np.ndarray, fs: float, a: Agc) -> np.ndarray:
                          np.where(fall, np.maximum(np.maximum(level * dec, pk), floor), level))
         hang = np.where(up | rearm, hb, np.where(held, hang - 1, hang))
         g[..., k] = a.target / np.maximum(level, floor)
-    prev = np.concatenate([g[..., :1], g[..., :-1]], axis=-1)
-    ramp = np.arange(1, b + 1) / b
-    gain = prev[..., None] + (g - prev)[..., None] * ramp
-    return gain.reshape(*z.shape[:-1], nb * b)[..., :n]
+    return g
 
 
 class Receiver:

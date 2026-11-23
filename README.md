@@ -10,7 +10,8 @@ white noise, impulsive atmospheric noise (QRN), man-made interference
 (switching-supply combs, powerline arcing), interfering stations (CW,
 AM, carriers, radar), recorded noise mixed in at an SNR, and the receiver
 (mistuning, passband, AGC) are done and checked against theory, ITU-R
-P.372 or their own parameters. A PyTorch backend is next (see
+P.372 or their own parameters. The Python package has a PyTorch backend
+for the GPU. Conditions that change over time are next (see
 [Roadmap](#roadmap)).
 
 ## The model
@@ -308,6 +309,8 @@ y = ic.Receiver.ssb(12000, mistune_hz=rng.uniform(-150, 150, len(x))).apply(y)
 - **How it differs from the Rust crate:** it works on whole arrays, with
   fractional delays done in the frequency domain, so there's no latency.
   Each leading index, such as a batch row, gets its own fading.
+- **GPU:** `ionochannel.torch` does the same with PyTorch; see
+  [PyTorch](#pytorch).
 - **Speed:** a batch of 128 × 4 s at 12 kS/s takes about 2 s on one CPU
   core, about 250× real time. The FFTs dominate. The SSB receiver adds
   about 1.3 s, QRN 1.1 s (Vd 8) to 1.7 s (Vd 2), a switching-supply
@@ -315,6 +318,47 @@ y = ic.Receiver.ssb(12000, mistune_hz=rng.uniform(-150, 150, len(x))).apply(y)
   an AM station 1.2 s and a radar 0.6 s.
 - **Seeds:** the same seed gives different numbers from the Rust crate,
   but the same statistics.
+
+## PyTorch
+
+`ionochannel.torch` has the same functions on tensors, for making
+training data on the GPU (`pip install .[torch]`):
+
+```python
+import torch, ionochannel as ic, ionochannel.torch as ict
+
+g = torch.Generator("cuda").manual_seed(1)
+x = speech.to("cuda")                                   # (batch, n), real or complex
+y = ict.Channel(12000, ic.preset("poor")).apply(x, g)
+y = ict.qrn(y, snr_db=torch.rand(len(x), device="cuda", generator=g) * 30 - 10,
+            vd_db=8, fs=12000, gen=g, signal_power=ict.power(x))
+y = ict.Receiver.ssb(12000).apply(y)
+```
+
+- **Same models, same parameters:** the specs (`ic.Agc`, `ic.Smps`,
+  `ic.Cw`, ...) and presets are shared. The statistics are the same, but
+  the numbers for a seed differ. The receiver has no randomness, so it
+  matches the numpy one: to 8e-7 of full scale in float32, and 2e-13 in
+  float64.
+- **Device and precision:** everything runs on the input's device in its
+  precision (float32 unless you pass float64). The random numbers come
+  from a `torch.Generator` on that device. Per-row values (SNR, level,
+  offset, mistuning) can be tensors.
+- **Speed** for 128 × 4 s at 12 kS/s on an RTX 5070:
+
+  | Step | GPU | numpy, one core |
+  |---|---|---|
+  | channel (poor) | 8 ms | about 2 s |
+  | QRN | 38 ms | 1.1–1.7 s |
+  | SSB receiver | 110 ms | 1.3 s |
+  | CW station | 106 ms | 0.8 s |
+  | others | 1–7 ms | 0.3–1.2 s |
+
+- **Two small parts run on the CPU:** the AGC's recursion over 1 ms
+  blocks (the peaks are found on the GPU), and building the Morse
+  keying. They account for most of the receiver's and the CW station's
+  time. QRN's burst envelope is convolved in float64, because its bursts
+  reach 10^6 times the mean.
 
 ## Validation
 
@@ -361,6 +405,13 @@ recording comes out at the same power as `awgn` at the same SNR, within
 3 %. A recording band-limited to 300–2700 Hz has the right density. The
 loop seam makes no step larger than the recording's own. Python also
 checks the WAV reader and the resampler.
+
+The PyTorch backend ([`python/tests/test_torch.py`](python/tests/test_torch.py))
+is checked against the same theory: Rayleigh depths, Doppler spread and
+shift, real-audio shift, fractional delay, SNR per row, QRN Vd and power,
+comb lines and AM, arcing power and mains lock, CW duty, AM carrier,
+radar sweep rate and recorded-noise level. Its receiver must match the
+numpy receiver sample for sample.
 
 The receiver is tested against its design
 ([`tests/receiver.rs`](tests/receiver.rs),
@@ -412,6 +463,13 @@ recording comes out at the same power as `awgn` at the same SNR, within
 loop seam makes no step larger than the recording's own. Python also
 checks the WAV reader and the resampler.
 
+The PyTorch backend ([`python/tests/test_torch.py`](python/tests/test_torch.py))
+is checked against the same theory: Rayleigh depths, Doppler spread and
+shift, real-audio shift, fractional delay, SNR per row, QRN Vd and power,
+comb lines and AM, arcing power and mains lock, CW duty, AM carrier,
+radar sweep rate and recorded-noise level. Its receiver must match the
+numpy receiver sample for sample.
+
 [`tools/compare_skywave.py`](tools/compare_skywave.py) checks both
 against [skywave](https://github.com/openarq-project/skywave)'s Watterson
 channel. The results are in [docs/validation.md](docs/validation.md).
@@ -424,6 +482,7 @@ python3 python/tests/test_noise.py
 python3 python/tests/test_interference.py
 python3 python/tests/test_stations.py
 python3 python/tests/test_recorded.py
+python3 python/tests/test_torch.py      # GPU if there is one; IONOCHANNEL_TORCH_DEVICE=cpu to force
 nice -n 10 python3 tools/check_qrn.py   # QRN against P.372, about 20 s
 ```
 
@@ -443,8 +502,7 @@ synthetic tests for CW and FSK decoders. Background for each item is in
    radars done. Still to do: data modes, and a statistical population of
    stations per band (Mendieta-Otero et al. 2014).
 4. **Recorded noise:** done.
-5. **A PyTorch backend** with the same API as the numpy functions, to
-   make training data on the GPU.
+5. **PyTorch backend:** done.
 6. **Conditions that change over time:** each path's delay, shift,
    spread and power drift slowly, or are replayed from measured Doppler
    records (HamSCI Grape: WWV/CHU). That covers travelling ionospheric
