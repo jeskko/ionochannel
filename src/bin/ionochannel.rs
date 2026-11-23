@@ -1,7 +1,7 @@
 //! ionochannel: put a recording through an HF channel.
 //!
 //!   ionochannel [--preset NAME | --path D,S[,F[,P]]... | --specular D,P[,F]...]
-//!               [--snr DB [--bw HZ]] [--seed N] [--rate HZ]
+//!               [--snr DB] [--qrn DB,VD] [--bw HZ] [--seed N] [--rate HZ]
 //!               [--mistune HZ] [--passband LO,HI [--transition HZ]]
 //!               [--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]] [--ssb] IN OUT
 //!   ionochannel --list
@@ -11,8 +11,8 @@
 //! filters' latency taken out) and keeps its format.
 
 use ionochannel::{
-    Agc, Channel, Component, PathSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Rng,
-    noise, presets, wav,
+    Agc, Channel, Component, PathSpec, Qrn, RealChannel, RealReceiver, Receiver, ReceiverSpec, Rng,
+    noise, presets, qrn, wav,
 };
 use num_complex::Complex32;
 use std::process::exit;
@@ -24,6 +24,8 @@ const USAGE: &str =
                           (repeat for more paths; powers default to equal shares)
   --specular D,P[,F]      a steady path: delay ms, power, shift Hz
   --snr DB                add white noise: SNR of the input's mean power in --bw
+  --qrn DB,VD             add impulsive atmospheric noise: SNR in --bw, P.372 Vd (dB, 200 Hz;
+                          1.05 = Gaussian, up to 14)
   --bw HZ                 SNR reference bandwidth [2500]
   --seed N                fading and noise realisation [1]
   --rate HZ               sample rate of a .cf32 input
@@ -63,6 +65,7 @@ fn main() {
         (None, Vec::new(), None, 2500.0, 1u64, None, Vec::new());
     let mut explicit_power = false;
     let mut rx = ReceiverSpec::default();
+    let mut qrn_arg: Option<(f64, f64)> = None;
     while let Some(arg) = a.next() {
         let mut val = |n: &str| {
             a.next()
@@ -133,6 +136,17 @@ fn main() {
                 ));
             }
             "--snr" => snr = Some(nums(&val("--snr"), 1, 1, "--snr")[0]),
+            "--qrn" => {
+                let v = nums(&val("--qrn"), 2, 2, "--qrn");
+                if !(qrn::VD_GAUSS..=qrn::vd_max()).contains(&v[1]) {
+                    die(&format!(
+                        "--qrn: Vd must be {:.2}..{} dB",
+                        qrn::VD_GAUSS,
+                        qrn::vd_max()
+                    ));
+                }
+                qrn_arg = Some((v[0], v[1]));
+            }
             "--bw" => bw = nums(&val("--bw"), 1, 1, "--bw")[0],
             "--seed" => {
                 seed = val("--seed")
@@ -261,6 +275,9 @@ fn main() {
         if let Some(s) = snr {
             noise::add_r(x, noise::noise_power(p0, s, bw, fs, false), &mut rng);
         }
+        if let Some((s, vd)) = qrn_arg {
+            Qrn::new(fs, vd, seed ^ 0x0071_726e).add_r(x, noise::noise_power(p0, s, bw, fs, false));
+        }
         if rx != ReceiverSpec::default() {
             let mut r = RealReceiver::new(fs, &rx);
             let lat = r.latency();
@@ -281,6 +298,9 @@ fn main() {
         if let Some(s) = snr {
             noise::add_c(x, noise::noise_power(p0, s, bw, fs, true), &mut rng);
         }
+        if let Some((s, vd)) = qrn_arg {
+            Qrn::new(fs, vd, seed ^ 0x0071_726e).add_c(x, noise::noise_power(p0, s, bw, fs, true));
+        }
         if rx != ReceiverSpec::default() {
             let mut r = Receiver::new(fs, &rx);
             let lat = r.latency();
@@ -300,6 +320,9 @@ fn main() {
         snr.map(|s| format!(", SNR {s} dB in {bw} Hz"))
             .unwrap_or_default()
     );
+    if let Some((s, vd)) = qrn_arg {
+        eprintln!("ionochannel: QRN at {s} dB in {bw} Hz, Vd {vd} dB in 200 Hz");
+    }
     if rx != ReceiverSpec::default() {
         eprintln!("ionochannel: receiver {rx:?}");
     }

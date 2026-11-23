@@ -4,7 +4,8 @@
 //! The channel is the Watterson model of ITU-R F.1487: a tapped delay
 //! line, one tap per propagation path, each tap's gain a sum of Rayleigh
 //! scatter (Gaussian Doppler spectrum, spread and shift) and specular
-//! components; then noise. Complex baseband ([`Channel`]) or real audio
+//! components; then noise: white ([`noise`]) or impulsive atmospheric
+//! noise set by its P.372 voltage deviation ([`Qrn`]). Complex baseband ([`Channel`]) or real audio
 //! ([`RealChannel`]); named conditions in [`presets`]. After that, the
 //! receiver: mistuning, passband filter and AGC ([`Receiver`],
 //! [`RealReceiver`]).
@@ -22,11 +23,13 @@ pub mod channel;
 pub mod fading;
 pub mod noise;
 pub mod presets;
+pub mod qrn;
 pub mod receiver;
 pub mod rng;
 pub mod wav;
 
 pub use channel::{Channel, PathSpec, RealChannel};
 pub use fading::Component;
+pub use qrn::Qrn;
 pub use receiver::{Agc, RealReceiver, Receiver, ReceiverSpec};
 pub use rng::Rng;

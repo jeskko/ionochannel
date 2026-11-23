@@ -37,9 +37,22 @@ How each entry was checked:
   [unverified: taken from skywave's description]
 - **ITU-R P.372-18 (09/2026)**, radio noise
   ([pdf](https://www.itu.int/dms_pubrec/itu-r/rec/p/R-REC-P.372-18-202609-I!!PDF-E.pdf)).
-  - Atmospheric noise Fa maps by season and time of day, Vd (the
-    impulsiveness), and the APD as a function of Vd.
-  - Man-made noise Fam = c − d·log10(f/MHz) [unverified]:
+  **[checked]** 2026-11-23.
+  - Atmospheric noise (§5.1): Fam maps by season and 4-hour block (Figs
+    13a–36a), frequency curves (b), and variability (c).
+  - The impulsiveness is the voltage deviation Vd = 20 log10(rms / mean)
+    of the envelope, given for 200 Hz. Fig. 37 is the APD for each Vd
+    (1.049 = Gaussian, up to 30 dB); Fig. 38 converts the 200 Hz Vd to
+    other bandwidths (straight lines in log bandwidth, Vd 2–14 dB, b/200
+    from 0.01 to 1000). The text calls it Fig. 39; it is Fig. 38.
+  - In this edition the c-figures show Du, Dl and their σ only. They no
+    longer give Vdm, although the text still says they do, so Vd has to
+    come from elsewhere (older editions or measurements).
+  - Figs. 37 and 38 are raster images. Digitised values and how they were
+    read are in [tools/check_qrn.py](../tools/check_qrn.py) and
+    [qrn.json](../python/ionochannel/qrn.json).
+  - Man-made noise (§6.1, eq. 17, Table 1): Fam = c − d·log10(f/MHz),
+    0.3–250 MHz:
 
     | Environment | c | d |
     |---|---|---|
@@ -49,6 +62,11 @@ How each entry was checked:
     | Quiet rural | 53.6 | 28.6 |
     | Galactic | 52.0 | 23.0 |
 
+  - Table 2 gives decile deviations with time (upper 9.2–11.0 dB, lower
+    4.6–6.7 dB) and with location (5.8–8.4 dB) for city, residential and
+    rural, to be taken as log-normal half distributions.
+  - §6 sorts man-made noise into wideband (AWGN-like), impulsive, and
+    "single carrier noise" (carriers and humps from nearby sources).
   - Its man-made data dates from the 1950s–70s. Later measurements
     (FFI 16-00869, Swedish studies) found lower levels.
 
@@ -142,7 +160,10 @@ How each entry was checked:
   ([survey](https://www.uni-due.de/imperia/md/content/dc/thoks_survey_aiee_2015.pdf)).
   - Class A parameters: A (impulsive index, about 0.01–1) and Γ
     [unverified].
-  - Fit the parameters to the P.372 Vd.
+  - Not used. Single impulses with Class A-like statistics make Vd grow
+    6–7 dB per decade of bandwidth, against 0.9–3.4 in P.372 Fig. 38.
+    The QRN model here uses bursts lasting 0.1–100 ms instead (see the
+    README).
 - **Man-made sources**:
   [ITU-R SM.2155](https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-SM.2155-2009-PDF-E.pdf),
   [SM.2212](https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-SM.2212-1-2012-PDF-E.pdf)

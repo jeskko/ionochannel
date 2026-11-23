@@ -7,7 +7,7 @@ description = "HF ionospheric channel simulator: Watterson / ITU-R F.1487 fading
 readme = "README.md"
 keywords = ["hf", "radio", "channel", "simulator", "watterson"]
 categories = ["simulation", "science"]
-include = ["src/**", "tests/**", "python/ionochannel/presets.json", "README.md", "LICENSE"]
+include = ["src/**", "tests/**", "python/ionochannel/presets.json", "python/ionochannel/qrn.json", "README.md", "LICENSE"]
 
 [dependencies]
 num-complex = "0.4"

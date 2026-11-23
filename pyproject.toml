@@ -16,4 +16,4 @@ package-dir = {"" = "python"}
 packages = ["ionochannel"]
 
 [tool.setuptools.package-data]
-ionochannel = ["presets.json"]
+ionochannel = ["presets.json", "qrn.json"]

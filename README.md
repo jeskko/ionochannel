@@ -6,9 +6,9 @@ It is a Rust crate with a command-line tool, and a numpy Python package
 that implements the same model.
 
 Status: 0.1, early. The Watterson fading model, its standard presets,
-white noise and the receiver (mistuning, passband, AGC) are done and
-checked against theory. Noise and interference are next (see
-[Roadmap](#roadmap)).
+white noise, impulsive atmospheric noise (QRN) and the receiver
+(mistuning, passband, AGC) are done and checked against theory or
+ITU-R P.372. Man-made interference is next (see [Roadmap](#roadmap)).
 
 ## The model
 
@@ -44,6 +44,50 @@ pulls apart AM sidebands, RTTY tones and OFDM carriers.
 It works on complex baseband (IQ), or on real audio through the analytic
 signal. On audio, a positive Doppler shift moves the audio up; for LSB
 audio, flip the sign of the shift.
+
+## Atmospheric noise (QRN)
+
+Lightning makes noise that comes in bursts: crackles and crashes rather
+than a steady hiss. ITU-R P.372 measures how bursty it is with the
+voltage deviation, Vd = 20 log10(rms / mean) of the envelope in a 200 Hz
+bandwidth. Gaussian noise has 1.05 dB. P.372-18 Fig. 37 gives the
+amplitude distribution for each Vd, and Fig. 38 how Vd grows with
+bandwidth.
+
+- **The model:** Gaussian noise whose power follows a train of bursts
+  (sferics):
+  - The bursts arrive at random (Poisson).
+  - Each has an energy from a Pareto law, P(a² > x) = x^−2.
+  - Each decays exponentially, with a time constant between 0.1 and
+    100 ms (log-uniform).
+  - A Gaussian floor carries a share of the power that falls with Vd
+    (10 % at Vd 2 dB, 0.05 % at 14 dB).
+- **Vd sets everything:** you give Vd in 200 Hz (1.05 to 14 dB), and
+  the burst rate comes from a table calibrated by simulation, in
+  [`qrn.json`](python/ionochannel/qrn.json). It runs from 86 bursts/s
+  at Vd 2 dB to 0.7 bursts/s at 14 dB.
+- **Level:** set like white noise: the noise's mean power against the
+  signal, in a reference bandwidth. A short clip at a high Vd can be well
+  above or below that mean, since a few bursts carry most of the power.
+- **How well it matches P.372-18**, checked with
+  [`tools/check_qrn.py`](tools/check_qrn.py) on a seed the calibration
+  didn't use:
+  - Vd in 200 Hz is within 0.25 dB of the target.
+  - Fig. 38: Vd in 2 and 6 kHz is within 1 dB of the figure, and in
+    20 Hz within 2 dB.
+  - Fig. 37: the amplitude distribution is within 2.5 dB at Vd 2–10,
+    0.9 dB on average.
+  - These compare with values digitised from the figures, which are
+    raster images.
+- **The 200 Hz filter is an ideal rectangle.** Vd depends on the
+  filter's shape: through a 4-pole Butterworth with the same noise
+  bandwidth, the same noise reads 0.5 dB higher at Vd 3, 1.7 dB at 8 and
+  2.8 dB at 12. P.372 doesn't say which filter its 200 Hz values assume.
+- **Choosing Vd:** P.372-18 no longer gives Vd values; see
+  [docs/references.md](docs/references.md). For the Vd in another
+  bandwidth, `vd_bandwidth` (Python) and `qrn::vd_bandwidth` (Rust)
+  apply Fig. 38. For example, Vd 8 dB in 200 Hz is about 10.4 dB in
+  2.4 kHz.
 
 ## Receiver
 
@@ -100,9 +144,13 @@ ionochannel --preset high-disturbed --snr 0 iq.wav out.wav   # 2-channel WAV = I
 ionochannel --rate 24000 --preset flutter in.cf32 out.cf32   # complex float32
 ionochannel --path 0,1,0,0.4 --path 2.5,1,0.5,0.3 --specular 0,0.3 in.wav out.wav
 ionochannel --preset poor --snr 3 --ssb --mistune 80 in.wav out.wav   # SSB receiver
+ionochannel --preset moderate --snr 10 --qrn 6,8 --ssb in.wav out.wav   # plus QRN, Vd 8 dB
 ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav out.wav  # AM as I/Q
 ```
 
+- **QRN:** `--qrn DB,VD` adds atmospheric noise at an SNR in `--bw`,
+  with Vd in dB (200 Hz). It adds to `--snr`'s white noise if both are
+  given.
 - **Receiver:** `--mistune HZ`, `--passband LO,HI`, `--transition HZ`,
   `--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]`. `--ssb` is
   `--passband 300,2700 --agc 500`.
@@ -128,7 +176,8 @@ ch.process(&mut block); // streams: any block size, no end, same output
 ```
 
 `RealChannel` does the same for real audio. `noise` adds white noise at
-an SNR in a bandwidth. `Receiver` and `RealReceiver` stream the same
+an SNR in a bandwidth; `Qrn::new(fs, vd_db, seed)` adds QRN the same way
+(`add_c`, `add_r`). `Receiver` and `RealReceiver` stream the same
 way, with `ReceiverSpec::ssb()` or your own `ReceiverSpec { mistune_hz,
 passband, transition_hz, agc }`; `latency()` says how far the output
 lags.
@@ -143,6 +192,7 @@ ch = ic.Channel(12000, ic.preset("poor"))
 y = ch.apply(x, rng)          # x: (..., n) real or complex; each row its own fading
 y = ic.awgn(y, snr_db=rng.uniform(-10, 20, len(x)), fs=12000, rng=rng,
             signal_power=ic.power(x))
+y = ic.qrn(y, snr_db=10, vd_db=8, fs=12000, rng=rng, signal_power=ic.power(x))
 y = ic.Receiver.ssb(12000, mistune_hz=rng.uniform(-150, 150, len(x))).apply(y)
 # or ic.Receiver(fs, passband=(lo, hi), mistune_hz=..., agc=ic.Agc(decay_s=2.0))
 ```
@@ -154,7 +204,7 @@ y = ic.Receiver.ssb(12000, mistune_hz=rng.uniform(-150, 150, len(x))).apply(y)
   Each leading index, such as a batch row, gets its own fading.
 - **Speed:** a batch of 128 × 4 s at 12 kS/s takes about 2 s on one CPU
   core, about 250× real time. The FFTs dominate. The SSB receiver adds
-  about 1.3 s.
+  about 1.3 s, and QRN 1.1 s (Vd 8) to 1.7 s (Vd 2).
 - **Seeds:** the same seed gives different numbers from the Rust crate,
   but the same statistics.
 
@@ -190,6 +240,12 @@ The receiver is tested against its design
   decay × ln(10 / 10^(1/20)), give or take 3 ms, plus the hang time if
   set; below the floor the gain is the maximum gain.
 
+QRN is tested against its calibration ([`tests/qrn.rs`](tests/qrn.rs),
+[`python/tests/test_noise.py`](python/tests/test_noise.py)): Vd in 200 Hz
+within 0.5 dB of the target, Vd in 2 kHz within 1 dB of Fig. 38, mean
+power within 10 %, Vd 1.05 dB gives Gaussian noise, and streaming
+doesn't depend on block size.
+
 [`tools/compare_skywave.py`](tools/compare_skywave.py) checks both
 against [skywave](https://github.com/openarq-project/skywave)'s Watterson
 channel. The results are in [docs/validation.md](docs/validation.md).
@@ -198,6 +254,8 @@ channel. The results are in [docs/validation.md](docs/validation.md).
 cargo test --release
 python3 python/tests/test_stats.py      # or pytest
 python3 python/tests/test_receiver.py
+python3 python/tests/test_noise.py
+nice -n 10 python3 tools/check_qrn.py   # QRN against P.372, about 20 s
 ```
 
 ## Roadmap
@@ -209,9 +267,8 @@ synthetic tests for CW and FSK decoders. Background for each item is in
 
 1. **Receiver effects:** done: passband, mistuning, AGC. Still to do:
    clock (sample rate) offset.
-2. **Impulsive atmospheric noise** (Hall or Middleton Class A),
-   calibrated to ITU-R P.372 (Vd, APD), with the man-made noise floor
-   set by site type; **man-made interference:** switching-supply combs,
+2. **Impulsive atmospheric noise:** done, calibrated to P.372 Vd.
+   Still to do: **man-made interference**, switching-supply combs,
    powerline harmonics, VDSL, powerline OFDM bursts, LED drivers.
 3. **Interfering stations:** CW and data traffic per band, after
    Mendieta-Otero et al. 2014; carriers, adjacent AM stations, sweeping
