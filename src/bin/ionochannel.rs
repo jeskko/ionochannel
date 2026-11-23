@@ -3,7 +3,8 @@
 //!   ionochannel [--preset NAME | --path D,S[,F[,P]]... | --specular D,P[,F]...]
 //!               [--snr DB] [--qrn DB,VD] [--smps DB,F[,SP]] [--arcing DB]
 //!               [--mains HZ] [--cw DB,F[,WPM]]... [--am DB,F]... [--carrier DB,F]...
-//!               [--radar DB,F[,SWEEP_HZ,RATE_HZ]]... [--bw HZ] [--seed N] [--rate HZ]
+//!               [--radar DB,F[,SWEEP_HZ,RATE_HZ]]... [--noise-file PATH,DB [--noise-band LO,HI]]
+//!               [--bw HZ] [--seed N] [--rate HZ]
 //!               [--mistune HZ] [--passband LO,HI [--transition HZ]]
 //!               [--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]] [--ssb] IN OUT
 //!   ionochannel --list
@@ -14,8 +15,8 @@
 
 use ionochannel::{
     Agc, Am, AmSpec, Arcing, ArcingSpec, Channel, Component, Cw, CwSpec, PathSpec, Qrn, Radar,
-    RadarSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Rng, Smps, SmpsSpec, noise,
-    presets, qrn, wav,
+    RadarSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Recorded, Rng, Smps, SmpsSpec,
+    noise, presets, qrn, wav,
 };
 use num_complex::Complex32;
 use std::process::exit;
@@ -38,6 +39,9 @@ const USAGE: &str =
   --am DB,F               AM broadcast, speech-like audio to 4.5 kHz; DB is carrier power
   --carrier DB,F          a steady carrier, drifting slowly
   --radar DB,F[,SW,RATE]  FMCW radar: SW Hz sweeps [20000], RATE a second [50]
+  --noise-file PATH,DB    mix in a noise recording (WAV at the same rate; mono for audio, I/Q
+                          for I/Q), looped from a random start, at an SNR in --bw
+  --noise-band LO,HI      band its level is measured in [300,2700 audio; +-0.45 fs I/Q]
   --bw HZ                 SNR reference bandwidth [2500]
   --seed N                fading and noise realisation [1]
   --rate HZ               sample rate of a .cf32 input
@@ -154,6 +158,8 @@ fn main() {
     let mut arcing_arg: Option<f64> = None;
     let mut mains = 50.0;
     let mut stations: Vec<Station> = Vec::new();
+    let mut noise_file: Option<(String, f64)> = None;
+    let mut noise_band: Option<(f64, f64)> = None;
     while let Some(arg) = a.next() {
         let mut val = |n: &str| {
             a.next()
@@ -291,6 +297,24 @@ fn main() {
                     f: v[1],
                 });
             }
+            "--noise-file" => {
+                let v = val("--noise-file");
+                let (path, db) = v
+                    .rsplit_once(',')
+                    .unwrap_or_else(|| die("--noise-file: PATH,DB"));
+                let db = db
+                    .trim()
+                    .parse()
+                    .unwrap_or_else(|_| die("--noise-file: bad SNR"));
+                noise_file = Some((path.to_string(), db));
+            }
+            "--noise-band" => {
+                let v = nums(&val("--noise-band"), 2, 2, "--noise-band");
+                if v[1] <= v[0] {
+                    die("--noise-band: HI must be above LO");
+                }
+                noise_band = Some((v[0], v[1]));
+            }
             "--mains" => {
                 mains = nums(&val("--mains"), 1, 1, "--mains")[0];
                 if mains <= 0.0 {
@@ -412,6 +436,18 @@ fn main() {
             n => die(&format!("{inp}: {n} channels (1 or 2 only)")),
         }
     };
+    let recording = noise_file.as_ref().map(|(path, _)| {
+        let f = std::fs::File::open(path).unwrap_or_else(|e| die(&format!("{path}: {e}")));
+        let w =
+            wav::read(std::io::BufReader::new(f)).unwrap_or_else(|e| die(&format!("{path}: {e}")));
+        if w.rate as f64 != fs {
+            die(&format!(
+                "{path}: {} Hz, the input is {fs} Hz (resample it first)",
+                w.rate
+            ));
+        }
+        w
+    });
     let mut rng = Rng::new(seed ^ 0x6e_6f69_7365);
     if let Some(x) = real.as_mut() {
         let p0 = noise::power_r(x);
@@ -446,6 +482,16 @@ fn main() {
         }
         for (i, st) in stations.iter().enumerate() {
             st.add_r(x, fs, p0, seed ^ (0x7374_0000 + i as u64));
+        }
+        if let (Some(w), Some((path, db))) = (&recording, &noise_file) {
+            if w.channels != 1 {
+                die(&format!("{path}: mono audio input needs a mono recording"));
+            }
+            Recorded::new_r(&w.samples, fs, noise_band, seed ^ 0x0072_6563).add_r(
+                x,
+                p0 / 10f64.powf(db / 10.0),
+                bw,
+            );
         }
         if rx != ReceiverSpec::default() {
             let mut r = RealReceiver::new(fs, &rx);
@@ -489,6 +535,25 @@ fn main() {
         for (i, st) in stations.iter().enumerate() {
             st.add_c(x, fs, p0, seed ^ (0x7374_0000 + i as u64));
         }
+        if let (Some(w), Some((path, db))) = (&recording, &noise_file) {
+            if w.channels != 2 {
+                die(&format!(
+                    "{path}: I/Q input needs a two-channel (I/Q) recording"
+                ));
+            }
+            let c: Vec<Complex32> = w
+                .samples
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|[i, q]| Complex32::new(*i, *q))
+                .collect();
+            Recorded::new_c(&c, fs, noise_band, seed ^ 0x0072_6563).add_c(
+                x,
+                p0 / 10f64.powf(db / 10.0),
+                bw,
+            );
+        }
         if rx != ReceiverSpec::default() {
             let mut r = Receiver::new(fs, &rx);
             let lat = r.latency();
@@ -524,6 +589,9 @@ fn main() {
             "ionochannel: station {:?} at {} Hz, {} dB",
             st.kind, st.f, st.db
         );
+    }
+    if let Some((path, db)) = &noise_file {
+        eprintln!("ionochannel: recorded noise {path} at {db} dB in {bw} Hz");
     }
     if rx != ReceiverSpec::default() {
         eprintln!("ionochannel: receiver {rx:?}");

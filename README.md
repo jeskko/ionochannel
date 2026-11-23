@@ -8,9 +8,10 @@ that implements the same model.
 Status: 0.1, early. The Watterson fading model, its standard presets,
 white noise, impulsive atmospheric noise (QRN), man-made interference
 (switching-supply combs, powerline arcing), interfering stations (CW,
-AM, carriers, radar) and the receiver (mistuning, passband, AGC) are done
-and checked against theory, ITU-R P.372 or their own parameters. Mixing
-in recorded noise is next (see [Roadmap](#roadmap)).
+AM, carriers, radar), recorded noise mixed in at an SNR, and the receiver
+(mistuning, passband, AGC) are done and checked against theory, ITU-R
+P.372 or their own parameters. A PyTorch backend is next (see
+[Roadmap](#roadmap)).
 
 ## The model
 
@@ -147,6 +148,27 @@ folding it back. The defaults are illustrative.
 There is no statistical population of stations per band, time and place
 yet (Mendieta-Otero et al. 2014); choose the stations yourself.
 
+## Recorded noise
+
+Real band noise from a recording, mixed in at an SNR (`mix_noise`,
+`Recorded`, `--noise-file`).
+
+- **Level:** the recording's mean spectral density over a measurement
+  band, times the reference bandwidth, against the signal's power. For
+  white noise this is what `awgn` does, so the SNRs agree. The default
+  band is 300–2700 Hz for audio, which suits receiver recordings, and
+  ±0.45 fs for I/Q.
+- **Segments:** each one starts at a random point. A recording shorter
+  than the segment is looped, with a 10 ms equal-power crossfade so the
+  seam doesn't click.
+- **Python vs Rust:** Python levels each segment on its own by default
+  (`per_segment=True`), so every row has its SNR exactly. With
+  `per_segment=False`, or in Rust, one level comes from the whole
+  recording, so the segments vary as the recording does.
+- **Format:** the recording must be at the signal's sample rate, and
+  mono for audio or I/Q for I/Q. In Python, `read_wav` (PCM 16/24/32,
+  float) and `resample` help.
+
 ## Receiver
 
 After the channel and the noise, in this order:
@@ -205,6 +227,7 @@ ionochannel --preset poor --snr 3 --ssb --mistune 80 in.wav out.wav   # SSB rece
 ionochannel --preset moderate --snr 10 --qrn 6,8 --ssb in.wav out.wav   # plus QRN, Vd 8 dB
 ionochannel --preset poor --snr 15 --smps -20,1700 --arcing 5 --mains 60 --ssb in.wav out.wav
 ionochannel --preset good --snr 20 --cw -3,1200,25 --cw -10,600 --carrier -20,2200 --radar -6,1500 --ssb in.wav out.wav
+ionochannel --preset moderate --noise-file band40m.wav,6 --ssb in.wav out.wav   # recorded noise, SNR 6 dB
 ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav out.wav  # AM as I/Q
 ```
 
@@ -218,6 +241,9 @@ ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav ou
 - **Stations** (each can be repeated): `--cw DB,F[,WPM]`, `--am DB,F`,
   `--carrier DB,F`, `--radar DB,F[,SWEEP_HZ,RATE_HZ]`. The stations don't
   go through the channel; each is added after it, at its own level.
+- **Recorded noise:** `--noise-file PATH,DB` mixes a WAV recording in
+  at an SNR in `--bw`; `--noise-band LO,HI` sets the band its level is
+  measured in.
 - **Receiver:** `--mistune HZ`, `--passband LO,HI`, `--transition HZ`,
   `--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]`. `--ssb` is
   `--passband 300,2700 --agc 500`.
@@ -247,7 +273,9 @@ an SNR in a bandwidth; `Qrn::new(fs, vd_db, seed)` adds QRN the same way
 (`add_c`, `add_r`), and so do `Smps::new(fs, offset_hz, &SmpsSpec, real,
 seed)` and `Arcing::new(fs, &ArcingSpec, seed)`. The stations are
 `Cw::new(fs, offset_hz, &CwSpec, real, seed)`, `Am::new` (or
-`Am::with_audio`) and `Radar::new`. `Receiver` and `RealReceiver` stream the same
+`Am::with_audio`) and `Radar::new`. `Recorded::new_r(&samples, fs, band,
+seed)` (or `new_c` for I/Q) mixes a recording in with
+`add_r(x, signal_power / snr, bw_hz)`. `Receiver` and `RealReceiver` stream the same
 way, with `ReceiverSpec::ssb()` or your own `ReceiverSpec { mistune_hz,
 passband, transition_hz, agc }`; `latency()` says how far the output
 lags.
@@ -269,6 +297,8 @@ y = ic.arcing(y, snr_db=5, fs=12000, rng=rng, spec=ic.Arcing(off_s=3.0),
               signal_power=ic.power(x))
 y = ic.cw(y, level_db=-6, offset_hz=rng.uniform(300, 2700, len(x)), fs=12000, rng=rng,
           spec=ic.Cw(wpm=25, fade_hz=1.0), signal_power=ic.power(x))
+rec, fs_rec = ic.read_wav("band40m.wav")      # resample(rec, fs_rec, 12000) if needed
+y = ic.mix_noise(y, rec, snr_db=6, fs=12000, rng=rng, signal_power=ic.power(x))
 y = ic.Receiver.ssb(12000, mistune_hz=rng.uniform(-150, 150, len(x))).apply(y)
 # or ic.Receiver(fs, passband=(lo, hi), mistune_hz=..., agc=ic.Agc(decay_s=2.0))
 ```
@@ -325,6 +355,13 @@ Stations are tested against their parameters
   0 Hz is dropped, not folded.
 - **Radar:** sweep rate within 1 %; in-band time as expected.
 
+Recorded noise ([`tests/recorded.rs`](tests/recorded.rs),
+[`python/tests/test_recorded.py`](python/tests/test_recorded.py)): a white
+recording comes out at the same power as `awgn` at the same SNR, within
+3 %. A recording band-limited to 300–2700 Hz has the right density. The
+loop seam makes no step larger than the recording's own. Python also
+checks the WAV reader and the resampler.
+
 The receiver is tested against its design
 ([`tests/receiver.rs`](tests/receiver.rs),
 [`python/tests/test_receiver.py`](python/tests/test_receiver.py)):
@@ -368,6 +405,13 @@ Stations are tested against their parameters
   0 Hz is dropped, not folded.
 - **Radar:** sweep rate within 1 %; in-band time as expected.
 
+Recorded noise ([`tests/recorded.rs`](tests/recorded.rs),
+[`python/tests/test_recorded.py`](python/tests/test_recorded.py)): a white
+recording comes out at the same power as `awgn` at the same SNR, within
+3 %. A recording band-limited to 300–2700 Hz has the right density. The
+loop seam makes no step larger than the recording's own. Python also
+checks the WAV reader and the resampler.
+
 [`tools/compare_skywave.py`](tools/compare_skywave.py) checks both
 against [skywave](https://github.com/openarq-project/skywave)'s Watterson
 channel. The results are in [docs/validation.md](docs/validation.md).
@@ -379,6 +423,7 @@ python3 python/tests/test_receiver.py
 python3 python/tests/test_noise.py
 python3 python/tests/test_interference.py
 python3 python/tests/test_stations.py
+python3 python/tests/test_recorded.py
 nice -n 10 python3 tools/check_qrn.py   # QRN against P.372, about 20 s
 ```
 
@@ -397,8 +442,7 @@ synthetic tests for CW and FSK decoders. Background for each item is in
 3. **Interfering stations:** CW, carriers, AM stations and sweeping
    radars done. Still to do: data modes, and a statistical population of
    stations per band (Mendieta-Otero et al. 2014).
-4. **Recorded noise:** mix in real HF noise recordings from files at a
-   given level.
+4. **Recorded noise:** done.
 5. **A PyTorch backend** with the same API as the numpy functions, to
    make training data on the GPU.
 6. **Conditions that change over time:** each path's delay, shift,

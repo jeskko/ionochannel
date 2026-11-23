@@ -7,7 +7,7 @@
 //! components; then noise: white ([`noise`]) or impulsive atmospheric
 //! noise set by its P.372 voltage deviation ([`Qrn`]); man-made
 //! interference ([`Smps`] combs, [`Arcing`] buzz); interfering stations
-//! ([`Cw`], [`Am`], [`Radar`]). Complex baseband ([`Channel`]) or real audio
+//! ([`Cw`], [`Am`], [`Radar`]); recorded noise at an SNR ([`Recorded`]). Complex baseband ([`Channel`]) or real audio
 //! ([`RealChannel`]); named conditions in [`presets`]. After that, the
 //! receiver: mistuning, passband filter and AGC ([`Receiver`],
 //! [`RealReceiver`]).
@@ -28,6 +28,7 @@ pub mod noise;
 pub mod presets;
 pub mod qrn;
 pub mod receiver;
+pub mod recorded;
 pub mod rng;
 pub mod stations;
 pub mod wav;
@@ -37,5 +38,6 @@ pub use fading::Component;
 pub use interference::{Arcing, ArcingSpec, Smps, SmpsSpec};
 pub use qrn::Qrn;
 pub use receiver::{Agc, RealReceiver, Receiver, ReceiverSpec};
+pub use recorded::Recorded;
 pub use rng::Rng;
 pub use stations::{Am, AmSpec, Cw, CwSpec, Radar, RadarSpec};
