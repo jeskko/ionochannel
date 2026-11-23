@@ -6,8 +6,8 @@ It is a Rust crate with a command-line tool, and a numpy Python package
 that implements the same model.
 
 Status: 0.1, early. The Watterson fading model, its standard presets and
-white noise are done and checked against theory. Noise, interference and
-time-varying conditions are next (see [Roadmap](#roadmap)).
+white noise are done and checked against theory. Receiver effects, noise
+and interference are next (see [Roadmap](#roadmap)).
 
 ## The model
 
@@ -148,30 +148,35 @@ python3 python/tests/test_stats.py      # or pytest
 
 ## Roadmap
 
-From the literature survey in [docs/references.md](docs/references.md):
+Ordered by what the first users need: training data for neural noise
+reduction (SSB voice, CW, AM broadcast) and for a signal identifier, and
+synthetic tests for CW and FSK decoders. Background for each item is in
+[docs/references.md](docs/references.md).
 
-1. **Conditions that change over time:** each path's delay, shift,
+1. **Receiver effects:** SSB passband (300–2700 Hz), mistuning (about
+   ±150 Hz), AGC, clock offset.
+2. **Impulsive atmospheric noise** (Hall or Middleton Class A),
+   calibrated to ITU-R P.372 (Vd, APD), with the man-made noise floor
+   set by site type; **man-made interference:** switching-supply combs,
+   powerline harmonics, VDSL, powerline OFDM bursts, LED drivers.
+3. **Interfering stations:** CW and data traffic per band, after
+   Mendieta-Otero et al. 2014; carriers, adjacent AM stations, sweeping
+   radars.
+4. **Recorded noise:** mix in real HF noise recordings from files at a
+   given level.
+5. **A PyTorch backend** with the same API as the numpy functions, to
+   make training data on the GPU.
+6. **Conditions that change over time:** each path's delay, shift,
    spread and power drift slowly, or are replayed from measured Doppler
    records (HamSCI Grape: WWV/CHU). That covers travelling ionospheric
    disturbances, dawn and dusk, and paths that come and go.
-2. **More presets:** auroral substorm (DAMSON: spread 2–55 Hz, delay up
+7. **More presets:** auroral substorm (DAMSON: spread 2–55 Hz, delay up
    to 11 ms), polar cap, equatorial spread-F, and NVIS with ground wave,
    sporadic E and F2 as separate paths.
-3. **Impulsive atmospheric noise** (Hall or Middleton Class A),
-   calibrated to ITU-R P.372 (Vd, APD), with the man-made noise floor
-   set by site type.
-4. **Man-made interference:** switching-supply combs, VDSL, powerline
-   OFDM bursts, LED drivers.
-5. **Interfering stations:** CW and data traffic per band, after
-   Mendieta-Otero et al. 2014; carriers, adjacent AM stations, sweeping
-   radars.
-6. **Receiver effects:** SSB passband, AGC, mistuning, clock offset.
-7. **A wideband mode** (Vogler & Hoffmeyer) for signals wider than about
+8. **A wideband mode** (Vogler & Hoffmeyer) for signals wider than about
    12 kHz.
-8. **Absorption events:** a sudden ionospheric disturbance fade-out and
+9. **Absorption events:** a sudden ionospheric disturbance fade-out and
    polar cap absorption.
-9. **A PyTorch backend** of the Python functions, to make training data
-   on the GPU.
 
 ## Licence
 
