@@ -37,6 +37,8 @@ const USAGE: &str =
   --doppler-drift RMS,TAU  each path's Doppler shift drifts at random: rms Hz, correlation s
   --doppler-file PATH     replay a Doppler record on every path: CSV lines 'time_s,hz'
                           (time increasing; '#' lines skipped), linear in between
+  --flare-file PATH,F[,K] a solar flare on every path: CSV 'time_s,xray_flux_W_m2'; power drops
+                          by the D-RAP vertical absorption at F MHz, times K [1] for the path
   --snr DB                add white noise: SNR of the input's mean power in --bw
   --qrn DB,VD             add impulsive atmospheric noise: SNR in --bw, P.372 Vd (dB, 200 Hz;
                           1.05 = Gaussian, up to 14)
@@ -189,6 +191,7 @@ fn main() {
     let mut clock_ppm: Option<f64> = None;
     let mut drift_arg: Option<(f64, f64)> = None;
     let mut doppler_file: Option<Term> = None;
+    let mut flare_file: Option<Term> = None;
     let mut noise_band: Option<(f64, f64)> = None;
     while let Some(arg) = a.next() {
         let mut val = |n: &str| {
@@ -395,6 +398,40 @@ fn main() {
                 }
                 doppler_file = Some(Term::table(&pts));
             }
+            "--flare-file" => {
+                let v = val("--flare-file");
+                let mut parts = v.split(',');
+                let path = parts.next().unwrap_or_default().to_string();
+                let rest: Vec<f64> = parts
+                    .map(|t| {
+                        t.trim()
+                            .parse()
+                            .unwrap_or_else(|_| die("--flare-file: PATH,F_MHZ[,FACTOR]"))
+                    })
+                    .collect();
+                if rest.is_empty() || rest.len() > 2 || rest[0] <= 0.0 {
+                    die("--flare-file: PATH,F_MHZ[,FACTOR]");
+                }
+                let k = rest.get(1).copied().unwrap_or(1.0);
+                let text =
+                    std::fs::read_to_string(&path).unwrap_or_else(|e| die(&format!("{path}: {e}")));
+                let pts: Vec<(f64, f64)> = text
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .map(|l| {
+                        let v = nums(l, 2, 2, &path);
+                        (
+                            v[0],
+                            -k * ionochannel::vary::flare_absorption_db(v[1], rest[0], 1.0),
+                        )
+                    })
+                    .collect();
+                if pts.is_empty() || !pts.windows(2).all(|w| w[1].0 > w[0].0) {
+                    die(&format!("{path}: need increasing times"));
+                }
+                flare_file = Some(Term::table(&pts));
+            }
             "--doppler-drift" => {
                 let v = nums(&val("--doppler-drift"), 2, 2, "--doppler-drift");
                 if v[0] < 0.0 || v[1] <= 0.0 {
@@ -503,7 +540,11 @@ fn main() {
         }
     };
 
-    let vary: Vec<Vary> = if tid_arg.is_none() && drift_arg.is_none() && doppler_file.is_none() {
+    let vary: Vec<Vary> = if tid_arg.is_none()
+        && drift_arg.is_none()
+        && doppler_file.is_none()
+        && flare_file.is_none()
+    {
         Vec::new()
     } else {
         paths
@@ -523,6 +564,9 @@ fn main() {
                 }
                 if let Some(t) = &doppler_file {
                     v.shift_hz.push(t.clone());
+                }
+                if let Some(t) = &flare_file {
+                    v.power_db.push(t.clone());
                 }
                 v
             })

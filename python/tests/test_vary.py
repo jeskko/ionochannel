@@ -106,6 +106,24 @@ def test_table_replays_a_record():
         pass
 
 
+def test_drap_absorption():
+    # the fit is exact at M1 and X1, and within 2 MHz of the SWPC
+    # forecaster table it was fitted to at M5 and X5 (20 and 30 MHz)
+    assert abs(ic.flare_haf_mhz(1e-5) - 15) < 1e-9 and abs(ic.flare_haf_mhz(1e-4) - 25) < 1e-9
+    assert abs(ic.flare_haf_mhz(5e-5) - 20) < 2.1 and abs(ic.flare_haf_mhz(5e-4) - 30) < 2.1
+    haf = ic.flare_haf_mhz(5e-5)
+    assert abs(ic.flare_absorption_db(5e-5, haf) - 1.0) < 1e-9          # 1 dB at the HAF
+    assert abs(ic.flare_absorption_db(5e-5, haf / 2) - 2 ** 1.5) < 1e-9
+    assert ic.flare_haf_mhz(1e-4, cos_chi=0.0) == 0.0
+    assert abs(ic.pca_absorption_db(30.0, 100.0) - 1.15) < 1e-9
+    assert abs(ic.pca_absorption_db(10.0, 100.0, day=False) - 0.2 * 3 ** 1.5) < 1e-9
+    # a flare record dims a path through its power trajectory
+    tab = ic.absorption_table([0, 60, 600], ic.flare_absorption_db([1e-6, 1e-4, 1e-6], 7.0))
+    y = run(100.0, [ic.specular(0, 1.0)], [ic.Vary(power_db=(tab,))], np.ones((1, 70000), complex), 9)[0]
+    want = 10 ** (-ic.flare_absorption_db(1e-4, 7.0) / 20)
+    assert abs(abs(y[6000]) - want) < 1e-3, (abs(y[6000]), want)
+
+
 if __name__ == "__main__":
     bad = 0
     for name, fn in sorted(globals().items()):

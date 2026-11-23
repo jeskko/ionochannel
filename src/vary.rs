@@ -198,3 +198,30 @@ impl Run {
         v
     }
 }
+
+/// NOAA SWPC D-RAP: the highest frequency (MHz) affected by 1 dB of
+/// vertical absorption in a solar X-ray flare of 0.1-0.8 nm flux
+/// `flux_wm2`: 10 log10(flux) + 65 MHz at the sub-solar point (exact at
+/// M1 -> 15 and X1 -> 25 MHz), times cos(chi)^0.75 away from it.
+pub fn flare_haf_mhz(flux_wm2: f64, cos_chi: f64) -> f64 {
+    let haf = (10.0 * flux_wm2.max(1e-30).log10() + 65.0).max(0.0);
+    haf * cos_chi.clamp(0.0, 1.0).powf(0.75)
+}
+
+/// D-RAP frequency scaling: A(f) = (f0 / f)^1.5 A(f0) dB.
+pub fn absorption_db(f_mhz: f64, a0_db: f64, f0_mhz: f64) -> f64 {
+    (f0_mhz / f_mhz).powf(1.5) * a0_db
+}
+
+/// Vertical absorption (dB) at `f_mhz` in a flare (1 dB at the HAF).
+pub fn flare_absorption_db(flux_wm2: f64, f_mhz: f64, cos_chi: f64) -> f64 {
+    absorption_db(f_mhz, 1.0, flare_haf_mhz(flux_wm2, cos_chi))
+}
+
+/// D-RAP polar cap absorption (vertical) at `f_mhz`: 0.115 sqrt(J) dB by
+/// day (J: integral proton flux above 5.2 MeV), 0.020 sqrt(J) by night
+/// (above 2.2 MeV), at 30 MHz, scaled by (30 / f)^1.5.
+pub fn pca_absorption_db(f_mhz: f64, proton_flux: f64, day: bool) -> f64 {
+    let a30 = if day { 0.115 } else { 0.020 } * proton_flux.max(0.0).sqrt();
+    absorption_db(f_mhz, a30, 30.0)
+}

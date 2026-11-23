@@ -19,7 +19,8 @@ from .interference import Arcing, Bursts, Smps, arcing, arcing_noise, bursts, bu
 from .noise import qrn, qrn_noise, vd_bandwidth
 from .receiver import Agc, Receiver, bandpass_taps, clock_offset
 from .recorded import band_density, mix_noise, read_wav, recorded_noise, resample
-from .vary import Drift, Ramp, Sine, Table, Vary, tid
+from .vary import (Drift, Ramp, Sine, Table, Vary, absorption_db, absorption_table, flare_absorption_db, flare_haf_mhz,
+                   pca_absorption_db, tid)
 from .stations import (Am, Cw, Population, Psk31, Radar, Rtty, population, population_noise, population_plan, am, am_noise, cw, cw_noise, psk31, psk31_noise, radar,
                        radar_noise, rtty, rtty_noise, speech_like)
 
@@ -30,5 +31,6 @@ __all__ = ["Channel", "Component", "Path", "awgn", "power", "scatter", "specular
            "Psk31", "Rtty", "psk31", "psk31_noise", "rtty", "rtty_noise",
            "Population", "population", "population_noise", "population_plan",
            "band_density", "mix_noise", "read_wav", "recorded_noise", "resample",
-           "Drift", "Ramp", "Sine", "Table", "Vary", "tid"]
+           "Drift", "Ramp", "Sine", "Table", "Vary", "tid",
+           "absorption_db", "absorption_table", "flare_absorption_db", "flare_haf_mhz", "pca_absorption_db"]
 __version__ = "0.1.0"

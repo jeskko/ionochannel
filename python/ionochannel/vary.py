@@ -179,3 +179,39 @@ def moving_delay(x: np.ndarray, d: np.ndarray, chunk: int = 2048) -> np.ndarray:
         idx = (np.arange(a, a + dd.shape[1])[None, :] - w.astype(np.int64))[..., None] + FD_HALF - k + pad
         y[:, a:a + chunk] = np.sum(xp[r, idx] * taps, axis=-1)
     return y
+
+
+def flare_haf_mhz(flux_wm2, cos_chi=1.0):
+    """NOAA SWPC D-RAP: highest frequency affected by 1 dB of vertical
+    absorption during a solar X-ray flare: 10 log10(flux) + 65 MHz at the
+    sub-solar point (M1 -> 15, X1 -> 25 MHz), times cos(chi)^0.75 away
+    from it (chi the solar zenith angle; 0 on the night side)."""
+    flux = np.maximum(np.asarray(flux_wm2, float), 1e-30)
+    haf = np.maximum(10 * np.log10(flux) + 65, 0.0)
+    return haf * np.clip(np.asarray(cos_chi, float), 0, 1) ** 0.75
+
+
+def absorption_db(f_mhz, a0_db, f0_mhz):
+    """D-RAP frequency scaling: A(f) = (f0 / f)^1.5 A(f0) dB."""
+    return (np.asarray(f0_mhz, float) / f_mhz) ** 1.5 * np.asarray(a0_db, float)
+
+
+def flare_absorption_db(flux_wm2, f_mhz, cos_chi=1.0):
+    """Vertical-incidence absorption (dB) at f_mhz for a 0.1-0.8 nm X-ray
+    flux (D-RAP: 1 dB at the HAF, scaled by (HAF / f)^1.5)."""
+    return absorption_db(f_mhz, 1.0, flare_haf_mhz(flux_wm2, cos_chi))
+
+
+def pca_absorption_db(f_mhz, proton_flux, day=True):
+    """D-RAP polar cap absorption (vertical) at f_mhz: 0.115 sqrt(J) dB by
+    day with J the integral proton flux above 5.2 MeV, 0.020 sqrt(J) by
+    night with J above 2.2 MeV, at 30 MHz, scaled by (30 / f)^1.5."""
+    a30 = (0.115 if day else 0.020) * np.sqrt(np.maximum(np.asarray(proton_flux, float), 0))
+    return absorption_db(f_mhz, a30, 30.0)
+
+
+def absorption_table(t_s, absorption, factor: float = 1.0) -> Table:
+    """A power trajectory (dB) from an absorption record: -factor *
+    absorption at times t_s. D-RAP's values are for vertical incidence;
+    `factor` is for the path's geometry (the user's choice)."""
+    return Table(tuple(np.asarray(t_s, float)), tuple(-factor * np.asarray(absorption, float)))

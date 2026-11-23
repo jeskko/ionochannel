@@ -1,7 +1,7 @@
 //! Paths that change over time: Doppler, power, spread and delay follow
 //! their trajectories; the TID helper's delay and Doppler agree.
 
-use ionochannel::vary::{C, tid};
+use ionochannel::vary::{C, flare_absorption_db, flare_haf_mhz, pca_absorption_db, tid};
 use ionochannel::{Channel, PathSpec, Term, Vary};
 use num_complex::{Complex32, Complex64};
 use std::f64::consts::{PI, TAU};
@@ -260,4 +260,17 @@ fn table_replays_a_record() {
     for (i, f) in inst_freq(&x, fs).iter().enumerate() {
         assert!((f - want(i as f64 / fs)).abs() < 0.01, "{i}: {f}");
     }
+}
+
+#[test]
+fn drap_absorption() {
+    assert!((flare_haf_mhz(1e-5, 1.0) - 15.0).abs() < 1e-9);
+    assert!((flare_haf_mhz(1e-4, 1.0) - 25.0).abs() < 1e-9);
+    assert!((flare_haf_mhz(5e-5, 1.0) - 20.0).abs() < 2.1);
+    assert_eq!(flare_haf_mhz(1e-4, 0.0), 0.0);
+    let haf = flare_haf_mhz(5e-5, 1.0);
+    assert!((flare_absorption_db(5e-5, haf, 1.0) - 1.0).abs() < 1e-9);
+    assert!((flare_absorption_db(5e-5, haf / 2.0, 1.0) - 2f64.powf(1.5)).abs() < 1e-9);
+    assert!((pca_absorption_db(30.0, 100.0, true) - 1.15).abs() < 1e-9);
+    assert!((pca_absorption_db(10.0, 100.0, false) - 0.2 * 3f64.powf(1.5)).abs() < 1e-9);
 }
