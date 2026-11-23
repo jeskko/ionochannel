@@ -210,9 +210,32 @@ All from the ITU-R texts, checked against them (2026-11-23).
 | mid-quiet / -moderate / -disturbed | 0.5 / 1 / 2 ms | 0.1 / 0.5 / 1 Hz | F.1487 Annex 3 §3 |
 | mid-nvis-disturbed | 7 ms | 1 Hz | F.1487 Annex 3 §3.4 |
 | high-quiet / -moderate / -disturbed | 1 / 3 / 7 ms | 0.5 / 10 / 30 Hz | F.1487 Annex 3 §4 |
+| polar-cap-14mhz | 0.3 ms | 10.14 Hz | Stocker et al. 2013, Table 2 |
+| polar-cap-5mhz | 1.5 ms | 2.73 Hz | Stocker et al. 2013, Table 2 |
+| trough-5mhz | 4.1 ms | 1.17 Hz | Stocker et al. 2013, Table 2 |
 
 Each preset has two paths of equal power, except the flat ones, which
-have one. The presets live in
+have one.
+
+The last three are 95th percentiles measured from 2009 to 2012 (Stocker,
+Warrington & Siddle, Radio Science 48:638, 2013), each from one row of
+their Table 2:
+
+- **polar-cap-14mhz:** Qaanaaq–Ny-Ålesund (1705 km, polar cap), winter
+  day, 14.36 MHz. The path's largest Doppler spread.
+- **polar-cap-5mhz:** the same path, winter day, 4.64 MHz. Its largest
+  multipath spread.
+- **trough-5mhz:** Nurmijärvi–Bruntingthorpe (1800 km, along the
+  mid-latitude trough), winter day, 4.64 MHz.
+
+The two papers define the quantities differently:
+
+- **Doppler spread:** their spread is the narrowest width holding 80 % of
+  the power. For a Gaussian spectrum that is 2.563σ, so the F.1487
+  spread here (2σ) is their value divided by 1.2816. For example, 13.0 Hz
+  becomes 10.14 Hz.
+- **Multipath spread:** theirs runs from the first mode to the last
+  (modes within 12 dB), which is the delay between the two paths here. The presets live in
 [`python/ionochannel/presets.json`](python/ionochannel/presets.json),
 which both implementations read.
 

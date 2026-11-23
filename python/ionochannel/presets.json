@@ -1,67 +1,278 @@
 {
-  "_doc": "Named channels. A preset is a list of paths; a path has a delay (ms, relative to the first) and one or more components: Rayleigh scatter (power, spread_hz = 2 sigma of its Gaussian Doppler spectrum, shift_hz) or specular (a steady ray: power, shift_hz). Shorthand: a path with power/spread_hz/shift_hz is one scatter component. Path powers of a preset add up to 1. Checked against the ITU-R texts on 2026-11-23.",
-  "flat-slow": {
-    "source": "ITU-R F.520-2 §2.1: flat fading, one path, 0.2 Hz",
-    "paths": [{"delay_ms": 0.0, "power": 1.0, "spread_hz": 0.2}]
-  },
-  "flat-fast": {
-    "source": "ITU-R F.520-2 §2.1: flat fading, one path, 1 Hz",
-    "paths": [{"delay_ms": 0.0, "power": 1.0, "spread_hz": 1.0}]
-  },
-  "good": {
-    "source": "ITU-R F.520-2 §2.2.1 (= F.1487 mid-latitude quiet)",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 0.1}, {"delay_ms": 0.5, "power": 0.5, "spread_hz": 0.1}]
-  },
-  "moderate": {
-    "source": "ITU-R F.520-2 §2.2.2 (= F.1487 mid-latitude moderate)",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 0.5}, {"delay_ms": 1.0, "power": 0.5, "spread_hz": 0.5}]
-  },
-  "poor": {
-    "source": "ITU-R F.520-2 §2.2.3 (= F.1487 mid-latitude disturbed; MIL-STD-188-110 and codec2 'MPP' use the same)",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 1.0}, {"delay_ms": 2.0, "power": 0.5, "spread_hz": 1.0}]
-  },
-  "flutter": {
-    "source": "ITU-R F.520-2 §2.2.4",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 10.0}, {"delay_ms": 0.5, "power": 0.5, "spread_hz": 10.0}]
-  },
-  "low-quiet": {
-    "source": "ITU-R F.1487 Annex 3 §2.1",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 0.5}, {"delay_ms": 0.5, "power": 0.5, "spread_hz": 0.5}]
-  },
-  "low-moderate": {
-    "source": "ITU-R F.1487 Annex 3 §2.2",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 1.5}, {"delay_ms": 2.0, "power": 0.5, "spread_hz": 1.5}]
-  },
-  "low-disturbed": {
-    "source": "ITU-R F.1487 Annex 3 §2.3",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 10.0}, {"delay_ms": 6.0, "power": 0.5, "spread_hz": 10.0}]
-  },
-  "mid-quiet": {
-    "source": "ITU-R F.1487 Annex 3 §3.1",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 0.1}, {"delay_ms": 0.5, "power": 0.5, "spread_hz": 0.1}]
-  },
-  "mid-moderate": {
-    "source": "ITU-R F.1487 Annex 3 §3.2",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 0.5}, {"delay_ms": 1.0, "power": 0.5, "spread_hz": 0.5}]
-  },
-  "mid-disturbed": {
-    "source": "ITU-R F.1487 Annex 3 §3.3",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 1.0}, {"delay_ms": 2.0, "power": 0.5, "spread_hz": 1.0}]
-  },
-  "mid-nvis-disturbed": {
-    "source": "ITU-R F.1487 Annex 3 §3.4 (a ground wave may be added)",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 1.0}, {"delay_ms": 7.0, "power": 0.5, "spread_hz": 1.0}]
-  },
-  "high-quiet": {
-    "source": "ITU-R F.1487 Annex 3 §4.1",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 0.5}, {"delay_ms": 1.0, "power": 0.5, "spread_hz": 0.5}]
-  },
-  "high-moderate": {
-    "source": "ITU-R F.1487 Annex 3 §4.2",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 10.0}, {"delay_ms": 3.0, "power": 0.5, "spread_hz": 10.0}]
-  },
-  "high-disturbed": {
-    "source": "ITU-R F.1487 Annex 3 §4.3",
-    "paths": [{"delay_ms": 0.0, "power": 0.5, "spread_hz": 30.0}, {"delay_ms": 7.0, "power": 0.5, "spread_hz": 30.0}]
-  }
+ "_doc": "Named channels. A preset is a list of paths; a path has a delay (ms, relative to the first) and one or more components: Rayleigh scatter (power, spread_hz = 2 sigma of its Gaussian Doppler spectrum, shift_hz) or specular (a steady ray: power, shift_hz). Shorthand: a path with power/spread_hz/shift_hz is one scatter component. Path powers of a preset add up to 1. Checked against the ITU-R texts on 2026-11-23.",
+ "flat-slow": {
+  "source": "ITU-R F.520-2 §2.1: flat fading, one path, 0.2 Hz",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 1.0,
+    "spread_hz": 0.2
+   }
+  ]
+ },
+ "flat-fast": {
+  "source": "ITU-R F.520-2 §2.1: flat fading, one path, 1 Hz",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 1.0,
+    "spread_hz": 1.0
+   }
+  ]
+ },
+ "good": {
+  "source": "ITU-R F.520-2 §2.2.1 (= F.1487 mid-latitude quiet)",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 0.1
+   },
+   {
+    "delay_ms": 0.5,
+    "power": 0.5,
+    "spread_hz": 0.1
+   }
+  ]
+ },
+ "moderate": {
+  "source": "ITU-R F.520-2 §2.2.2 (= F.1487 mid-latitude moderate)",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 0.5
+   },
+   {
+    "delay_ms": 1.0,
+    "power": 0.5,
+    "spread_hz": 0.5
+   }
+  ]
+ },
+ "poor": {
+  "source": "ITU-R F.520-2 §2.2.3 (= F.1487 mid-latitude disturbed; MIL-STD-188-110 and codec2 'MPP' use the same)",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 1.0
+   },
+   {
+    "delay_ms": 2.0,
+    "power": 0.5,
+    "spread_hz": 1.0
+   }
+  ]
+ },
+ "flutter": {
+  "source": "ITU-R F.520-2 §2.2.4",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 10.0
+   },
+   {
+    "delay_ms": 0.5,
+    "power": 0.5,
+    "spread_hz": 10.0
+   }
+  ]
+ },
+ "low-quiet": {
+  "source": "ITU-R F.1487 Annex 3 §2.1",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 0.5
+   },
+   {
+    "delay_ms": 0.5,
+    "power": 0.5,
+    "spread_hz": 0.5
+   }
+  ]
+ },
+ "low-moderate": {
+  "source": "ITU-R F.1487 Annex 3 §2.2",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 1.5
+   },
+   {
+    "delay_ms": 2.0,
+    "power": 0.5,
+    "spread_hz": 1.5
+   }
+  ]
+ },
+ "low-disturbed": {
+  "source": "ITU-R F.1487 Annex 3 §2.3",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 10.0
+   },
+   {
+    "delay_ms": 6.0,
+    "power": 0.5,
+    "spread_hz": 10.0
+   }
+  ]
+ },
+ "mid-quiet": {
+  "source": "ITU-R F.1487 Annex 3 §3.1",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 0.1
+   },
+   {
+    "delay_ms": 0.5,
+    "power": 0.5,
+    "spread_hz": 0.1
+   }
+  ]
+ },
+ "mid-moderate": {
+  "source": "ITU-R F.1487 Annex 3 §3.2",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 0.5
+   },
+   {
+    "delay_ms": 1.0,
+    "power": 0.5,
+    "spread_hz": 0.5
+   }
+  ]
+ },
+ "mid-disturbed": {
+  "source": "ITU-R F.1487 Annex 3 §3.3",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 1.0
+   },
+   {
+    "delay_ms": 2.0,
+    "power": 0.5,
+    "spread_hz": 1.0
+   }
+  ]
+ },
+ "mid-nvis-disturbed": {
+  "source": "ITU-R F.1487 Annex 3 §3.4 (a ground wave may be added)",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 1.0
+   },
+   {
+    "delay_ms": 7.0,
+    "power": 0.5,
+    "spread_hz": 1.0
+   }
+  ]
+ },
+ "high-quiet": {
+  "source": "ITU-R F.1487 Annex 3 §4.1",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 0.5
+   },
+   {
+    "delay_ms": 1.0,
+    "power": 0.5,
+    "spread_hz": 0.5
+   }
+  ]
+ },
+ "high-moderate": {
+  "source": "ITU-R F.1487 Annex 3 §4.2",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 10.0
+   },
+   {
+    "delay_ms": 3.0,
+    "power": 0.5,
+    "spread_hz": 10.0
+   }
+  ]
+ },
+ "high-disturbed": {
+  "source": "ITU-R F.1487 Annex 3 §4.3",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 30.0
+   },
+   {
+    "delay_ms": 7.0,
+    "power": 0.5,
+    "spread_hz": 30.0
+   }
+  ]
+ },
+ "polar-cap-14mhz": {
+  "source": "Stocker, Warrington & Siddle 2013, Radio Science 48:638, Table 2: 95th percentiles 2009-2012, Qaanaaq-Ny-Alesund (polar cap, 1705 km), winter day, 14.36 MHz; Doppler spread there is the 80 %-power width (13.0 Hz), here 2 sigma = width / 1.2816; multipath spread (first mode to last, modes within 12 dB) is the path delay",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 10.14
+   },
+   {
+    "delay_ms": 0.3,
+    "power": 0.5,
+    "spread_hz": 10.14
+   }
+  ]
+ },
+ "polar-cap-5mhz": {
+  "source": "Stocker, Warrington & Siddle 2013, Radio Science 48:638, Table 2: 95th percentiles 2009-2012, Qaanaaq-Ny-Alesund (polar cap, 1705 km), winter day, 4.64 MHz; Doppler spread there is the 80 %-power width (3.5 Hz), here 2 sigma = width / 1.2816; multipath spread (first mode to last, modes within 12 dB) is the path delay",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 2.73
+   },
+   {
+    "delay_ms": 1.5,
+    "power": 0.5,
+    "spread_hz": 2.73
+   }
+  ]
+ },
+ "trough-5mhz": {
+  "source": "Stocker, Warrington & Siddle 2013, Radio Science 48:638, Table 2: 95th percentiles 2009-2012, Nurmijarvi-Bruntingthorpe (mid-latitude trough, 1800 km), winter day, 4.64 MHz; Doppler spread there is the 80 %-power width (1.5 Hz), here 2 sigma = width / 1.2816; multipath spread (first mode to last, modes within 12 dB) is the path delay",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 1.17
+   },
+   {
+    "delay_ms": 4.1,
+    "power": 0.5,
+    "spread_hz": 1.17
+   }
+  ]
+ }
 }

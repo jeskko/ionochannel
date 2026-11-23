@@ -94,7 +94,7 @@ How each entry was checked:
   - Angling, Cannon, Davies, Willink, Jodalen, Lundborg, Radio Science
     33(1):97–107 (1998), doi:10.1029/97RS02206. [abs] Abstract, read
     2026-11-23 on the Birmingham repository page (the paper is
-    paywalled): Doppler spread 2–55 Hz and multipath spread 1–11 ms
+    paywalled; Wiley refused curl with HTTP 403): Doppler spread 2–55 Hz and multipath spread 1–11 ms
     "exceeded for 5% of time" across four high-latitude paths. It doesn't
     say which path or condition gives which, or how spread is defined.
   - Jacobsen, Jodalen, Cannon, Smith, Angling, DAMSON poster (ESA space
@@ -109,8 +109,23 @@ How each entry was checked:
   - Stocker, Warrington & Siddle, Radio Science 48(5):638–645 (2013),
     doi:10.1002/2013RS005264: polar cap (Qaanaaq–Ny-Ålesund) and trough
     (Uppsala and Nurmijärvi–Bruntingthorpe) paths, 2001 and 2009–2012.
-    [abs] The open copy on figshare (Leicester) refused automated
-    fetching on 2026-11-23.
+    **[checked]** 2026-11-23 (figshare copy, rds20067.pdf):
+    - §2: Doppler spread is "the narrowest spectral width containing 80%
+      of the received signal power", corrected for the noise base;
+      composite multipath spread runs from the first mode's rising edge
+      to the last mode's falling edge, modes more than 12 dB below the
+      strongest excluded; the same definitions as Angling et al. 1998.
+      Only SNR ≥ 6 dB in 3 kHz; day and night are the 6 h around path
+      midpoint noon and midnight.
+    - Table 2: 95th percentiles, 14 March 2009 to 1 July 2012, by
+      season, day/night and frequency (4.64–18.38 MHz). Trough path NB:
+      Doppler spread 0.5–2.0 Hz, multipath 0.1–4.2 ms. Polar cap path
+      QN: Doppler spread 1.0–13.0 Hz, multipath 0.1–1.5 ms.
+    - §3.1: on QN, Doppler spreads are "typically less than 5 Hz, but at
+      times significantly exceed this value rising to upward of 20 Hz";
+      swings in Doppler shift with polar patches.
+    - Used for the presets polar-cap-14mhz, polar-cap-5mhz and
+      trough-5mhz.
   - **Adds:** "auroral substorm" and "polar cap" presets, and correlated
     taps.
 - **The mid-latitude trough and night-time sporadic E**: Warrington &
@@ -124,7 +139,7 @@ How each entry was checked:
   ("Study of NVIS Channel for USN Protocol Definition in Antarctica",
   Electronics 9(6):1037, 2020) with Doppler shift and delay spread of
   ground wave, Es and F2 given separately, near Livingston Island. [abs]
-  MDPI refused automated fetching on 2026-11-23. **Adds:** NVIS with
+  MDPI refused fetching on 2026-11-23, also with curl (HTTP 403). **Adds:** NVIS with
   several paths.
 - **Conditions that change over time:**
   - HiCIRF (Adelaide): ray tracing through an ionosphere that changes
@@ -152,8 +167,16 @@ How each entry was checked:
   - The stationary Watterson model holds for minutes only.
   - Oinats et al., Earth Planets Space 68 (2016), doi:10.1186/
     s40623-016-0390-8: MSTID periods and wavelengths from HF radar
-    against solar activity. [abs] Not reachable on 2026-11-23 (login
-    redirect).
+    against solar activity. **[checked]** 2026-11-23 (open-access PDF):
+    - From the Hokkaido East (2007–2014) and Ekaterinburg (2013–2014) HF
+      radars: the most frequent period is 60–100 min; daytime velocities
+      60–100 m/s (Hokkaido E region), 110–180 m/s (Hokkaido F), 30–90 m/s
+      (Ekaterinburg F); wavelengths 300–550, 450–800 and 150–400 km.
+    - Relative amplitude (RMS slant-range deviation over the mean, taken
+      as an estimate of the electron density perturbation): 3–8 % in the
+      Hokkaido F region, 4–9 % in the E region; it grows with solar
+      activity and with the AE index, while period and wavelength shrink
+      with solar activity.
   - **Adds:** path parameters that drift, and paths that come and go.
 - **Absorption**: NOAA D-RAP, absorption roughly ∝ f^−1.5
   [unverified]. **Adds:** sudden ionospheric disturbance fade-outs and
