@@ -2,7 +2,8 @@
 //!
 //!   ionochannel [--preset NAME | --path D,S[,F[,P]]... | --specular D,P[,F]...]
 //!               [--snr DB] [--qrn DB,VD] [--smps DB,F[,SP]] [--arcing DB]
-//!               [--mains HZ] [--bw HZ] [--seed N] [--rate HZ]
+//!               [--mains HZ] [--cw DB,F[,WPM]]... [--am DB,F]... [--carrier DB,F]...
+//!               [--radar DB,F[,SWEEP_HZ,RATE_HZ]]... [--bw HZ] [--seed N] [--rate HZ]
 //!               [--mistune HZ] [--passband LO,HI [--transition HZ]]
 //!               [--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]] [--ssb] IN OUT
 //!   ionochannel --list
@@ -12,8 +13,9 @@
 //! filters' latency taken out) and keeps its format.
 
 use ionochannel::{
-    Agc, Arcing, ArcingSpec, Channel, Component, PathSpec, Qrn, RealChannel, RealReceiver,
-    Receiver, ReceiverSpec, Rng, Smps, SmpsSpec, noise, presets, qrn, wav,
+    Agc, Am, AmSpec, Arcing, ArcingSpec, Channel, Component, Cw, CwSpec, PathSpec, Qrn, Radar,
+    RadarSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Rng, Smps, SmpsSpec, noise,
+    presets, qrn, wav,
 };
 use num_complex::Complex32;
 use std::process::exit;
@@ -31,6 +33,11 @@ const USAGE: &str =
                           at F Hz, lines SP Hz apart [60000]; drifting, with mains ripple
   --arcing DB             powerline arcing buzz: SNR in --bw
   --mains HZ              mains frequency for --smps and --arcing [50]
+ interfering stations (repeatable; DB against the signal's power, F Hz in the band):
+  --cw DB,F[,WPM]         CW, random 2-6 character groups [20 wpm]; DB is key-down power
+  --am DB,F               AM broadcast, speech-like audio to 4.5 kHz; DB is carrier power
+  --carrier DB,F          a steady carrier, drifting slowly
+  --radar DB,F[,SW,RATE]  FMCW radar: SW Hz sweeps [20000], RATE a second [50]
   --bw HZ                 SNR reference bandwidth [2500]
   --seed N                fading and noise realisation [1]
   --rate HZ               sample rate of a .cf32 input
@@ -64,6 +71,78 @@ fn nums(s: &str, min: usize, max: usize, what: &str) -> Vec<f64> {
     v
 }
 
+#[derive(Debug)]
+enum Kind {
+    Cw(f64),
+    Am,
+    Carrier,
+    Radar(f64, f64),
+}
+
+struct Station {
+    kind: Kind,
+    db: f64,
+    f: f64,
+}
+
+fn carrier_spec() -> SmpsSpec {
+    SmpsSpec {
+        spacing_hz: 1e12,
+        am_depth: 0.0,
+        fm_dev_hz: 0.0,
+        drift_hz: 2.0,
+        ..Default::default()
+    }
+}
+
+impl Station {
+    fn add_r(&self, x: &mut [f32], fs: f64, p0: f64, seed: u64) {
+        let p = p0 * 10f64.powf(self.db / 10.0);
+        match self.kind {
+            Kind::Cw(wpm) => {
+                let spec = CwSpec {
+                    wpm,
+                    ..Default::default()
+                };
+                Cw::new(fs, self.f, &spec, true, seed).add_r(x, p)
+            }
+            Kind::Am => Am::new(fs, self.f, &AmSpec::default(), true, seed).add_r(x, p),
+            Kind::Carrier => Smps::new(fs, self.f, &carrier_spec(), true, seed).add_r(x, p),
+            Kind::Radar(sweep_hz, rate_hz) => {
+                let spec = RadarSpec {
+                    sweep_hz,
+                    rate_hz,
+                    ..Default::default()
+                };
+                Radar::new(fs, self.f, &spec, true, seed).add_r(x, p)
+            }
+        }
+    }
+
+    fn add_c(&self, x: &mut [Complex32], fs: f64, p0: f64, seed: u64) {
+        let p = p0 * 10f64.powf(self.db / 10.0);
+        match self.kind {
+            Kind::Cw(wpm) => {
+                let spec = CwSpec {
+                    wpm,
+                    ..Default::default()
+                };
+                Cw::new(fs, self.f, &spec, false, seed).add_c(x, p)
+            }
+            Kind::Am => Am::new(fs, self.f, &AmSpec::default(), false, seed).add_c(x, p),
+            Kind::Carrier => Smps::new(fs, self.f, &carrier_spec(), false, seed).add_c(x, p),
+            Kind::Radar(sweep_hz, rate_hz) => {
+                let spec = RadarSpec {
+                    sweep_hz,
+                    rate_hz,
+                    ..Default::default()
+                };
+                Radar::new(fs, self.f, &spec, false, seed).add_c(x, p)
+            }
+        }
+    }
+}
+
 fn main() {
     let mut a = std::env::args().skip(1);
     let (mut preset, mut paths, mut snr, mut bw, mut seed, mut rate, mut files) =
@@ -74,6 +153,7 @@ fn main() {
     let mut smps_arg: Option<(f64, f64, f64)> = None;
     let mut arcing_arg: Option<f64> = None;
     let mut mains = 50.0;
+    let mut stations: Vec<Station> = Vec::new();
     while let Some(arg) = a.next() {
         let mut val = |n: &str| {
             a.next()
@@ -164,6 +244,53 @@ fn main() {
                 smps_arg = Some((v[0], v[1], sp));
             }
             "--arcing" => arcing_arg = Some(nums(&val("--arcing"), 1, 1, "--arcing")[0]),
+            "--cw" => {
+                let v = nums(&val("--cw"), 2, 3, "--cw");
+                let wpm = v.get(2).copied().unwrap_or(20.0);
+                if wpm <= 0.0 {
+                    die("--cw: WPM must be > 0");
+                }
+                stations.push(Station {
+                    kind: Kind::Cw(wpm),
+                    db: v[0],
+                    f: v[1],
+                });
+            }
+            "--am" => {
+                let v = nums(&val("--am"), 2, 2, "--am");
+                stations.push(Station {
+                    kind: Kind::Am,
+                    db: v[0],
+                    f: v[1],
+                });
+            }
+            "--carrier" => {
+                let v = nums(&val("--carrier"), 2, 2, "--carrier");
+                stations.push(Station {
+                    kind: Kind::Carrier,
+                    db: v[0],
+                    f: v[1],
+                });
+            }
+            "--radar" => {
+                let v = nums(&val("--radar"), 2, 4, "--radar");
+                if v.len() == 3 {
+                    die("--radar: give both SWEEP_HZ and RATE_HZ, or neither");
+                }
+                let (sw, rate) = if v.len() == 4 {
+                    (v[2], v[3])
+                } else {
+                    (20e3, 50.0)
+                };
+                if sw <= 0.0 || rate <= 0.0 {
+                    die("--radar: SWEEP_HZ and RATE_HZ must be > 0");
+                }
+                stations.push(Station {
+                    kind: Kind::Radar(sw, rate),
+                    db: v[0],
+                    f: v[1],
+                });
+            }
             "--mains" => {
                 mains = nums(&val("--mains"), 1, 1, "--mains")[0];
                 if mains <= 0.0 {
@@ -317,6 +444,9 @@ fn main() {
             Arcing::new(fs, &spec, seed ^ 0x6172_6373)
                 .add_r(x, noise::noise_power(p0, s, bw, fs, false));
         }
+        for (i, st) in stations.iter().enumerate() {
+            st.add_r(x, fs, p0, seed ^ (0x7374_0000 + i as u64));
+        }
         if rx != ReceiverSpec::default() {
             let mut r = RealReceiver::new(fs, &rx);
             let lat = r.latency();
@@ -356,6 +486,9 @@ fn main() {
             Arcing::new(fs, &spec, seed ^ 0x6172_6373)
                 .add_c(x, noise::noise_power(p0, s, bw, fs, true));
         }
+        for (i, st) in stations.iter().enumerate() {
+            st.add_c(x, fs, p0, seed ^ (0x7374_0000 + i as u64));
+        }
         if rx != ReceiverSpec::default() {
             let mut r = Receiver::new(fs, &rx);
             let lat = r.latency();
@@ -385,6 +518,12 @@ fn main() {
     }
     if let Some(s) = arcing_arg {
         eprintln!("ionochannel: arcing at {s} dB in {bw} Hz, mains {mains} Hz");
+    }
+    for st in &stations {
+        eprintln!(
+            "ionochannel: station {:?} at {} Hz, {} dB",
+            st.kind, st.f, st.db
+        );
     }
     if rx != ReceiverSpec::default() {
         eprintln!("ionochannel: receiver {rx:?}");

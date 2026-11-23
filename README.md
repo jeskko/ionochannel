@@ -7,10 +7,10 @@ that implements the same model.
 
 Status: 0.1, early. The Watterson fading model, its standard presets,
 white noise, impulsive atmospheric noise (QRN), man-made interference
-(switching-supply combs, powerline arcing) and the receiver (mistuning,
-passband, AGC) are done and checked against theory, ITU-R P.372 or their
-own parameters. Interfering stations are next (see
-[Roadmap](#roadmap)).
+(switching-supply combs, powerline arcing), interfering stations (CW,
+AM, carriers, radar) and the receiver (mistuning, passband, AGC) are done
+and checked against theory, ITU-R P.372 or their own parameters. Mixing
+in recorded noise is next (see [Roadmap](#roadmap)).
 
 ## The model
 
@@ -115,6 +115,38 @@ two. The defaults below are illustrative, not measured; set your own.
   - Level: mean power as an SNR in a reference bandwidth, like white
     noise.
 
+## Interfering stations
+
+Each station sits at an offset in the band, at a level in dB against the
+signal's power, and can fade on its own (flat Rayleigh fading with a
+Doppler spread `fade_hz`). On real audio only the positive frequencies
+are kept, so a station near 0 Hz loses its lower half rather than
+folding it back. The defaults are illustrative.
+
+- **CW** (`cw`, `Cw`): Morse with standard timing: a dit is 1.2/WPM s,
+  a dah 3 dits, and the gaps are 1 dit inside a character, 3 between
+  characters and 7 between words. The text is random groups of 2–6
+  characters, or yours, repeated. Keying edges are raised-cosine, 5 ms
+  by default. Level: key-down power.
+- **AM** (`am`, `Am`): a carrier modulated by your audio, or by
+  speech-like noise (white noise tilted by one-pole filters at 200 and
+  500 Hz, times a slow 3 Hz envelope).
+  - The audio is scaled to 0.3 rms and clipped at ±1, like a broadcast
+    limiter. It modulates at `depth` (1 by default), and the sidebands
+    are limited to ±4.5 kHz.
+  - Level: carrier power.
+  - Run the whole AM signal as IQ through the channel and you get
+    selective fading across its 9 kHz.
+- **Carrier:** use `smps`/`--carrier` with no ripple and one line.
+- **Radar** (`radar`, `Radar`): FMCW, linear up-sweeps of `sweep_hz`
+  (20 kHz) centred on the offset, `rate_hz` (50) a second. A sweep
+  crosses a 6 kHz band in 6 ms, so in a receiver it's a fast repeating
+  swish. It is tapered off at the band edges, so it doesn't alias. Level:
+  power while in the band.
+
+There is no statistical population of stations per band, time and place
+yet (Mendieta-Otero et al. 2014); choose the stations yourself.
+
 ## Receiver
 
 After the channel and the noise, in this order:
@@ -172,6 +204,7 @@ ionochannel --path 0,1,0,0.4 --path 2.5,1,0.5,0.3 --specular 0,0.3 in.wav out.wa
 ionochannel --preset poor --snr 3 --ssb --mistune 80 in.wav out.wav   # SSB receiver
 ionochannel --preset moderate --snr 10 --qrn 6,8 --ssb in.wav out.wav   # plus QRN, Vd 8 dB
 ionochannel --preset poor --snr 15 --smps -20,1700 --arcing 5 --mains 60 --ssb in.wav out.wav
+ionochannel --preset good --snr 20 --cw -3,1200,25 --cw -10,600 --carrier -20,2200 --radar -6,1500 --ssb in.wav out.wav
 ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav out.wav  # AM as I/Q
 ```
 
@@ -182,6 +215,9 @@ ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav ou
   a line at F Hz, each line DB against the signal. `--arcing DB` adds
   arcing buzz at an SNR in `--bw`. `--mains HZ` sets 50 or 60 Hz for
   both.
+- **Stations** (each can be repeated): `--cw DB,F[,WPM]`, `--am DB,F`,
+  `--carrier DB,F`, `--radar DB,F[,SWEEP_HZ,RATE_HZ]`. The stations don't
+  go through the channel; each is added after it, at its own level.
 - **Receiver:** `--mistune HZ`, `--passband LO,HI`, `--transition HZ`,
   `--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]`. `--ssb` is
   `--passband 300,2700 --agc 500`.
@@ -209,7 +245,9 @@ ch.process(&mut block); // streams: any block size, no end, same output
 `RealChannel` does the same for real audio. `noise` adds white noise at
 an SNR in a bandwidth; `Qrn::new(fs, vd_db, seed)` adds QRN the same way
 (`add_c`, `add_r`), and so do `Smps::new(fs, offset_hz, &SmpsSpec, real,
-seed)` and `Arcing::new(fs, &ArcingSpec, seed)`. `Receiver` and `RealReceiver` stream the same
+seed)` and `Arcing::new(fs, &ArcingSpec, seed)`. The stations are
+`Cw::new(fs, offset_hz, &CwSpec, real, seed)`, `Am::new` (or
+`Am::with_audio`) and `Radar::new`. `Receiver` and `RealReceiver` stream the same
 way, with `ReceiverSpec::ssb()` or your own `ReceiverSpec { mistune_hz,
 passband, transition_hz, agc }`; `latency()` says how far the output
 lags.
@@ -229,6 +267,8 @@ y = ic.smps(y, level_db=-20, offset_hz=rng.uniform(300, 2700), fs=12000, rng=rng
             spec=ic.Smps(mains_hz=50), signal_power=ic.power(x))
 y = ic.arcing(y, snr_db=5, fs=12000, rng=rng, spec=ic.Arcing(off_s=3.0),
               signal_power=ic.power(x))
+y = ic.cw(y, level_db=-6, offset_hz=rng.uniform(300, 2700, len(x)), fs=12000, rng=rng,
+          spec=ic.Cw(wpm=25, fade_hz=1.0), signal_power=ic.power(x))
 y = ic.Receiver.ssb(12000, mistune_hz=rng.uniform(-150, 150, len(x))).apply(y)
 # or ic.Receiver(fs, passband=(lo, hi), mistune_hz=..., agc=ic.Agc(decay_s=2.0))
 ```
@@ -241,7 +281,8 @@ y = ic.Receiver.ssb(12000, mistune_hz=rng.uniform(-150, 150, len(x))).apply(y)
 - **Speed:** a batch of 128 × 4 s at 12 kS/s takes about 2 s on one CPU
   core, about 250× real time. The FFTs dominate. The SSB receiver adds
   about 1.3 s, QRN 1.1 s (Vd 8) to 1.7 s (Vd 2), a switching-supply
-  comb 0.9 s and arcing 0.3 s.
+  comb 0.9 s and arcing 0.3 s. A CW station takes 0.8 s (1.0 s fading),
+  an AM station 1.2 s and a radar 0.6 s.
 - **Seeds:** the same seed gives different numbers from the Rust crate,
   but the same statistics.
 
@@ -272,6 +313,17 @@ Man-made interference is tested against its own parameters
 - **Arcing:** mean power within 10 %; over 90 % of the energy within
   ±1 ms of one phase of the half-cycle; on time within 5 % of
   on / (on + off).
+
+Stations are tested against their parameters
+([`tests/stations.rs`](tests/stations.rs),
+[`python/tests/test_stations.py`](python/tests/test_stations.py)):
+
+- **CW:** "PARIS" is 50 units with 22 key-down; duty 0.44 ± 0.01; it
+  repeats every 3 s at 20 WPM; 10–90 % rise 0.59 × the rise time.
+- **AM:** carrier within 1 %; a tone modulates at 0.3 rms; nothing
+  beyond the audio bandwidth; on real audio the lower sideband below
+  0 Hz is dropped, not folded.
+- **Radar:** sweep rate within 1 %; in-band time as expected.
 
 The receiver is tested against its design
 ([`tests/receiver.rs`](tests/receiver.rs),
@@ -305,6 +357,17 @@ Man-made interference is tested against its own parameters
   ±1 ms of one phase of the half-cycle; on time within 5 % of
   on / (on + off).
 
+Stations are tested against their parameters
+([`tests/stations.rs`](tests/stations.rs),
+[`python/tests/test_stations.py`](python/tests/test_stations.py)):
+
+- **CW:** "PARIS" is 50 units with 22 key-down; duty 0.44 ± 0.01; it
+  repeats every 3 s at 20 WPM; 10–90 % rise 0.59 × the rise time.
+- **AM:** carrier within 1 %; a tone modulates at 0.3 rms; nothing
+  beyond the audio bandwidth; on real audio the lower sideband below
+  0 Hz is dropped, not folded.
+- **Radar:** sweep rate within 1 %; in-band time as expected.
+
 [`tools/compare_skywave.py`](tools/compare_skywave.py) checks both
 against [skywave](https://github.com/openarq-project/skywave)'s Watterson
 channel. The results are in [docs/validation.md](docs/validation.md).
@@ -315,6 +378,7 @@ python3 python/tests/test_stats.py      # or pytest
 python3 python/tests/test_receiver.py
 python3 python/tests/test_noise.py
 python3 python/tests/test_interference.py
+python3 python/tests/test_stations.py
 nice -n 10 python3 tools/check_qrn.py   # QRN against P.372, about 20 s
 ```
 
@@ -330,9 +394,9 @@ synthetic tests for CW and FSK decoders. Background for each item is in
 2. **Impulsive atmospheric noise:** done, calibrated to P.372 Vd.
    **Man-made interference:** switching-supply combs and powerline
    arcing done. Still to do: VDSL, powerline OFDM bursts, LED drivers.
-3. **Interfering stations:** CW and data traffic per band, after
-   Mendieta-Otero et al. 2014; carriers, adjacent AM stations, sweeping
-   radars.
+3. **Interfering stations:** CW, carriers, AM stations and sweeping
+   radars done. Still to do: data modes, and a statistical population of
+   stations per band (Mendieta-Otero et al. 2014).
 4. **Recorded noise:** mix in real HF noise recordings from files at a
    given level.
 5. **A PyTorch backend** with the same API as the numpy functions, to

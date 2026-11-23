@@ -6,7 +6,8 @@
 //! scatter (Gaussian Doppler spectrum, spread and shift) and specular
 //! components; then noise: white ([`noise`]) or impulsive atmospheric
 //! noise set by its P.372 voltage deviation ([`Qrn`]); man-made
-//! interference ([`Smps`] combs, [`Arcing`] buzz). Complex baseband ([`Channel`]) or real audio
+//! interference ([`Smps`] combs, [`Arcing`] buzz); interfering stations
+//! ([`Cw`], [`Am`], [`Radar`]). Complex baseband ([`Channel`]) or real audio
 //! ([`RealChannel`]); named conditions in [`presets`]. After that, the
 //! receiver: mistuning, passband filter and AGC ([`Receiver`],
 //! [`RealReceiver`]).
@@ -28,6 +29,7 @@ pub mod presets;
 pub mod qrn;
 pub mod receiver;
 pub mod rng;
+pub mod stations;
 pub mod wav;
 
 pub use channel::{Channel, PathSpec, RealChannel};
@@ -36,3 +38,4 @@ pub use interference::{Arcing, ArcingSpec, Smps, SmpsSpec};
 pub use qrn::Qrn;
 pub use receiver::{Agc, RealReceiver, Receiver, ReceiverSpec};
 pub use rng::Rng;
+pub use stations::{Am, AmSpec, Cw, CwSpec, Radar, RadarSpec};

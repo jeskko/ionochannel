@@ -18,8 +18,10 @@ from .presets import names, preset, presets
 from .interference import Arcing, Smps, arcing, arcing_noise, smps, smps_noise
 from .noise import qrn, qrn_noise, vd_bandwidth
 from .receiver import Agc, Receiver, bandpass_taps
+from .stations import Am, Cw, Radar, am, am_noise, cw, cw_noise, radar, radar_noise, speech_like
 
 __all__ = ["Channel", "Component", "Path", "awgn", "power", "scatter", "specular", "tap_gain", "names", "preset", "presets",
            "Agc", "Receiver", "bandpass_taps", "qrn", "qrn_noise", "vd_bandwidth",
-           "Arcing", "Smps", "arcing", "arcing_noise", "smps", "smps_noise"]
+           "Arcing", "Smps", "arcing", "arcing_noise", "smps", "smps_noise",
+           "Am", "Cw", "Radar", "am", "am_noise", "cw", "cw_noise", "radar", "radar_noise", "speech_like"]
 __version__ = "0.1.0"
