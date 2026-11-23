@@ -5,7 +5,8 @@
 //! line, one tap per propagation path, each tap's gain a sum of Rayleigh
 //! scatter (Gaussian Doppler spectrum, spread and shift) and specular
 //! components; then noise: white ([`noise`]) or impulsive atmospheric
-//! noise set by its P.372 voltage deviation ([`Qrn`]). Complex baseband ([`Channel`]) or real audio
+//! noise set by its P.372 voltage deviation ([`Qrn`]); man-made
+//! interference ([`Smps`] combs, [`Arcing`] buzz). Complex baseband ([`Channel`]) or real audio
 //! ([`RealChannel`]); named conditions in [`presets`]. After that, the
 //! receiver: mistuning, passband filter and AGC ([`Receiver`],
 //! [`RealReceiver`]).
@@ -21,6 +22,7 @@
 
 pub mod channel;
 pub mod fading;
+pub mod interference;
 pub mod noise;
 pub mod presets;
 pub mod qrn;
@@ -30,6 +32,7 @@ pub mod wav;
 
 pub use channel::{Channel, PathSpec, RealChannel};
 pub use fading::Component;
+pub use interference::{Arcing, ArcingSpec, Smps, SmpsSpec};
 pub use qrn::Qrn;
 pub use receiver::{Agc, RealReceiver, Receiver, ReceiverSpec};
 pub use rng::Rng;

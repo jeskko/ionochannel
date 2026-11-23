@@ -6,9 +6,11 @@ It is a Rust crate with a command-line tool, and a numpy Python package
 that implements the same model.
 
 Status: 0.1, early. The Watterson fading model, its standard presets,
-white noise, impulsive atmospheric noise (QRN) and the receiver
-(mistuning, passband, AGC) are done and checked against theory or
-ITU-R P.372. Man-made interference is next (see [Roadmap](#roadmap)).
+white noise, impulsive atmospheric noise (QRN), man-made interference
+(switching-supply combs, powerline arcing) and the receiver (mistuning,
+passband, AGC) are done and checked against theory, ITU-R P.372 or their
+own parameters. Interfering stations are next (see
+[Roadmap](#roadmap)).
 
 ## The model
 
@@ -89,6 +91,30 @@ bandwidth.
   apply Fig. 38. For example, Vd 8 dB in 200 Hz is about 10.4 dB in
   2.4 kHz.
 
+## Man-made interference
+
+P.372 §6 sorts man-made noise into wideband, impulsive, and "single
+carrier noise" from nearby sources, but gives no parameters for the last
+two. The defaults below are illustrative, not measured; set your own.
+
+- **Switching-supply comb** (`smps`, `Smps`): a supply's harmonics,
+  lines `spacing` apart (its switching frequency, 60 kHz by default),
+  one of them at `offset` in the band. So in a 3 kHz window it is
+  usually one line, and in wide IQ a comb.
+  - The lines wander together: a random drift, 20 Hz rms with a 10 s
+    correlation time by default.
+  - They carry AM (depth 0.3) and FM (±15 Hz) at twice the mains
+    frequency, from the rectifier ripple.
+  - Level: each line's power against the signal, in dB.
+- **Powerline arcing** (`arcing`, `Arcing`): short noise bursts at a
+  fixed phase of each mains half-cycle, one phase per source, so 100 or
+  120 bursts per second per source.
+  - Default bursts: 0.1 ms long, ±0.2 ms of timing jitter, energies
+    log-normal with a 4 dB spread.
+  - It can switch on and off at random (`on_s`, `off_s`).
+  - Level: mean power as an SNR in a reference bandwidth, like white
+    noise.
+
 ## Receiver
 
 After the channel and the noise, in this order:
@@ -145,12 +171,17 @@ ionochannel --rate 24000 --preset flutter in.cf32 out.cf32   # complex float32
 ionochannel --path 0,1,0,0.4 --path 2.5,1,0.5,0.3 --specular 0,0.3 in.wav out.wav
 ionochannel --preset poor --snr 3 --ssb --mistune 80 in.wav out.wav   # SSB receiver
 ionochannel --preset moderate --snr 10 --qrn 6,8 --ssb in.wav out.wav   # plus QRN, Vd 8 dB
+ionochannel --preset poor --snr 15 --smps -20,1700 --arcing 5 --mains 60 --ssb in.wav out.wav
 ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav out.wav  # AM as I/Q
 ```
 
 - **QRN:** `--qrn DB,VD` adds atmospheric noise at an SNR in `--bw`,
   with Vd in dB (200 Hz). It adds to `--snr`'s white noise if both are
   given.
+- **Man-made:** `--smps DB,F[,SPACING]` adds a switching-supply comb with
+  a line at F Hz, each line DB against the signal. `--arcing DB` adds
+  arcing buzz at an SNR in `--bw`. `--mains HZ` sets 50 or 60 Hz for
+  both.
 - **Receiver:** `--mistune HZ`, `--passband LO,HI`, `--transition HZ`,
   `--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]`. `--ssb` is
   `--passband 300,2700 --agc 500`.
@@ -177,7 +208,8 @@ ch.process(&mut block); // streams: any block size, no end, same output
 
 `RealChannel` does the same for real audio. `noise` adds white noise at
 an SNR in a bandwidth; `Qrn::new(fs, vd_db, seed)` adds QRN the same way
-(`add_c`, `add_r`). `Receiver` and `RealReceiver` stream the same
+(`add_c`, `add_r`), and so do `Smps::new(fs, offset_hz, &SmpsSpec, real,
+seed)` and `Arcing::new(fs, &ArcingSpec, seed)`. `Receiver` and `RealReceiver` stream the same
 way, with `ReceiverSpec::ssb()` or your own `ReceiverSpec { mistune_hz,
 passband, transition_hz, agc }`; `latency()` says how far the output
 lags.
@@ -193,6 +225,10 @@ y = ch.apply(x, rng)          # x: (..., n) real or complex; each row its own fa
 y = ic.awgn(y, snr_db=rng.uniform(-10, 20, len(x)), fs=12000, rng=rng,
             signal_power=ic.power(x))
 y = ic.qrn(y, snr_db=10, vd_db=8, fs=12000, rng=rng, signal_power=ic.power(x))
+y = ic.smps(y, level_db=-20, offset_hz=rng.uniform(300, 2700), fs=12000, rng=rng,
+            spec=ic.Smps(mains_hz=50), signal_power=ic.power(x))
+y = ic.arcing(y, snr_db=5, fs=12000, rng=rng, spec=ic.Arcing(off_s=3.0),
+              signal_power=ic.power(x))
 y = ic.Receiver.ssb(12000, mistune_hz=rng.uniform(-150, 150, len(x))).apply(y)
 # or ic.Receiver(fs, passband=(lo, hi), mistune_hz=..., agc=ic.Agc(decay_s=2.0))
 ```
@@ -204,7 +240,8 @@ y = ic.Receiver.ssb(12000, mistune_hz=rng.uniform(-150, 150, len(x))).apply(y)
   Each leading index, such as a batch row, gets its own fading.
 - **Speed:** a batch of 128 × 4 s at 12 kS/s takes about 2 s on one CPU
   core, about 250× real time. The FFTs dominate. The SSB receiver adds
-  about 1.3 s, and QRN 1.1 s (Vd 8) to 1.7 s (Vd 2).
+  about 1.3 s, QRN 1.1 s (Vd 8) to 1.7 s (Vd 2), a switching-supply
+  comb 0.9 s and arcing 0.3 s.
 - **Seeds:** the same seed gives different numbers from the Rust crate,
   but the same statistics.
 
@@ -224,6 +261,17 @@ Both implementations are tested against closed-form theory
 - **Paths independent of each other.**
 - **Fractional delays:** exact for tones up to 0.375 fs.
 - **Streaming:** the output doesn't depend on block size.
+
+Man-made interference is tested against its own parameters
+([`tests/interference.rs`](tests/interference.rs),
+[`python/tests/test_interference.py`](python/tests/test_interference.py)):
+
+- **Comb:** lines at the right frequencies and powers, nothing between
+  them; AM sidebands at m/2; FM deviation within 0.5 Hz; drift rms within
+  10 %.
+- **Arcing:** mean power within 10 %; over 90 % of the energy within
+  ±1 ms of one phase of the half-cycle; on time within 5 % of
+  on / (on + off).
 
 The receiver is tested against its design
 ([`tests/receiver.rs`](tests/receiver.rs),
@@ -246,6 +294,17 @@ within 0.5 dB of the target, Vd in 2 kHz within 1 dB of Fig. 38, mean
 power within 10 %, Vd 1.05 dB gives Gaussian noise, and streaming
 doesn't depend on block size.
 
+Man-made interference is tested against its own parameters
+([`tests/interference.rs`](tests/interference.rs),
+[`python/tests/test_interference.py`](python/tests/test_interference.py)):
+
+- **Comb:** lines at the right frequencies and powers, nothing between
+  them; AM sidebands at m/2; FM deviation within 0.5 Hz; drift rms within
+  10 %.
+- **Arcing:** mean power within 10 %; over 90 % of the energy within
+  ±1 ms of one phase of the half-cycle; on time within 5 % of
+  on / (on + off).
+
 [`tools/compare_skywave.py`](tools/compare_skywave.py) checks both
 against [skywave](https://github.com/openarq-project/skywave)'s Watterson
 channel. The results are in [docs/validation.md](docs/validation.md).
@@ -255,6 +314,7 @@ cargo test --release
 python3 python/tests/test_stats.py      # or pytest
 python3 python/tests/test_receiver.py
 python3 python/tests/test_noise.py
+python3 python/tests/test_interference.py
 nice -n 10 python3 tools/check_qrn.py   # QRN against P.372, about 20 s
 ```
 
@@ -268,8 +328,8 @@ synthetic tests for CW and FSK decoders. Background for each item is in
 1. **Receiver effects:** done: passband, mistuning, AGC. Still to do:
    clock (sample rate) offset.
 2. **Impulsive atmospheric noise:** done, calibrated to P.372 Vd.
-   Still to do: **man-made interference**, switching-supply combs,
-   powerline harmonics, VDSL, powerline OFDM bursts, LED drivers.
+   **Man-made interference:** switching-supply combs and powerline
+   arcing done. Still to do: VDSL, powerline OFDM bursts, LED drivers.
 3. **Interfering stations:** CW and data traffic per band, after
    Mendieta-Otero et al. 2014; carriers, adjacent AM stations, sweeping
    radars.

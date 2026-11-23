@@ -1,7 +1,8 @@
 //! ionochannel: put a recording through an HF channel.
 //!
 //!   ionochannel [--preset NAME | --path D,S[,F[,P]]... | --specular D,P[,F]...]
-//!               [--snr DB] [--qrn DB,VD] [--bw HZ] [--seed N] [--rate HZ]
+//!               [--snr DB] [--qrn DB,VD] [--smps DB,F[,SP]] [--arcing DB]
+//!               [--mains HZ] [--bw HZ] [--seed N] [--rate HZ]
 //!               [--mistune HZ] [--passband LO,HI [--transition HZ]]
 //!               [--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]] [--ssb] IN OUT
 //!   ionochannel --list
@@ -11,8 +12,8 @@
 //! filters' latency taken out) and keeps its format.
 
 use ionochannel::{
-    Agc, Channel, Component, PathSpec, Qrn, RealChannel, RealReceiver, Receiver, ReceiverSpec, Rng,
-    noise, presets, qrn, wav,
+    Agc, Arcing, ArcingSpec, Channel, Component, PathSpec, Qrn, RealChannel, RealReceiver,
+    Receiver, ReceiverSpec, Rng, Smps, SmpsSpec, noise, presets, qrn, wav,
 };
 use num_complex::Complex32;
 use std::process::exit;
@@ -26,6 +27,10 @@ const USAGE: &str =
   --snr DB                add white noise: SNR of the input's mean power in --bw
   --qrn DB,VD             add impulsive atmospheric noise: SNR in --bw, P.372 Vd (dB, 200 Hz;
                           1.05 = Gaussian, up to 14)
+  --smps DB,F[,SP]        a switching-supply comb: each line DB against the signal, one line
+                          at F Hz, lines SP Hz apart [60000]; drifting, with mains ripple
+  --arcing DB             powerline arcing buzz: SNR in --bw
+  --mains HZ              mains frequency for --smps and --arcing [50]
   --bw HZ                 SNR reference bandwidth [2500]
   --seed N                fading and noise realisation [1]
   --rate HZ               sample rate of a .cf32 input
@@ -66,6 +71,9 @@ fn main() {
     let mut explicit_power = false;
     let mut rx = ReceiverSpec::default();
     let mut qrn_arg: Option<(f64, f64)> = None;
+    let mut smps_arg: Option<(f64, f64, f64)> = None;
+    let mut arcing_arg: Option<f64> = None;
+    let mut mains = 50.0;
     while let Some(arg) = a.next() {
         let mut val = |n: &str| {
             a.next()
@@ -146,6 +154,21 @@ fn main() {
                     ));
                 }
                 qrn_arg = Some((v[0], v[1]));
+            }
+            "--smps" => {
+                let v = nums(&val("--smps"), 2, 3, "--smps");
+                let sp = v.get(2).copied().unwrap_or(60e3);
+                if sp <= 0.0 {
+                    die("--smps: spacing must be > 0");
+                }
+                smps_arg = Some((v[0], v[1], sp));
+            }
+            "--arcing" => arcing_arg = Some(nums(&val("--arcing"), 1, 1, "--arcing")[0]),
+            "--mains" => {
+                mains = nums(&val("--mains"), 1, 1, "--mains")[0];
+                if mains <= 0.0 {
+                    die("--mains must be > 0");
+                }
             }
             "--bw" => bw = nums(&val("--bw"), 1, 1, "--bw")[0],
             "--seed" => {
@@ -278,6 +301,22 @@ fn main() {
         if let Some((s, vd)) = qrn_arg {
             Qrn::new(fs, vd, seed ^ 0x0071_726e).add_r(x, noise::noise_power(p0, s, bw, fs, false));
         }
+        if let Some((l, f, sp)) = smps_arg {
+            let spec = SmpsSpec {
+                spacing_hz: sp,
+                mains_hz: mains,
+                ..Default::default()
+            };
+            Smps::new(fs, f, &spec, true, seed ^ 0x736d_7073).add_r(x, p0 * 10f64.powf(l / 10.0));
+        }
+        if let Some(s) = arcing_arg {
+            let spec = ArcingSpec {
+                mains_hz: mains,
+                ..Default::default()
+            };
+            Arcing::new(fs, &spec, seed ^ 0x6172_6373)
+                .add_r(x, noise::noise_power(p0, s, bw, fs, false));
+        }
         if rx != ReceiverSpec::default() {
             let mut r = RealReceiver::new(fs, &rx);
             let lat = r.latency();
@@ -301,6 +340,22 @@ fn main() {
         if let Some((s, vd)) = qrn_arg {
             Qrn::new(fs, vd, seed ^ 0x0071_726e).add_c(x, noise::noise_power(p0, s, bw, fs, true));
         }
+        if let Some((l, f, sp)) = smps_arg {
+            let spec = SmpsSpec {
+                spacing_hz: sp,
+                mains_hz: mains,
+                ..Default::default()
+            };
+            Smps::new(fs, f, &spec, false, seed ^ 0x736d_7073).add_c(x, p0 * 10f64.powf(l / 10.0));
+        }
+        if let Some(s) = arcing_arg {
+            let spec = ArcingSpec {
+                mains_hz: mains,
+                ..Default::default()
+            };
+            Arcing::new(fs, &spec, seed ^ 0x6172_6373)
+                .add_c(x, noise::noise_power(p0, s, bw, fs, true));
+        }
         if rx != ReceiverSpec::default() {
             let mut r = Receiver::new(fs, &rx);
             let lat = r.latency();
@@ -322,6 +377,14 @@ fn main() {
     );
     if let Some((s, vd)) = qrn_arg {
         eprintln!("ionochannel: QRN at {s} dB in {bw} Hz, Vd {vd} dB in 200 Hz");
+    }
+    if let Some((l, f, sp)) = smps_arg {
+        eprintln!(
+            "ionochannel: SMPS comb, lines {l} dBc at {f} Hz + k * {sp} Hz, mains {mains} Hz"
+        );
+    }
+    if let Some(s) = arcing_arg {
+        eprintln!("ionochannel: arcing at {s} dB in {bw} Hz, mains {mains} Hz");
     }
     if rx != ReceiverSpec::default() {
         eprintln!("ionochannel: receiver {rx:?}");

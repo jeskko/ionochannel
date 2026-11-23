@@ -15,9 +15,11 @@ the Rust crate; the statistics are the same (both test against theory).
 """
 from .channel import Channel, Component, Path, awgn, power, scatter, specular, tap_gain
 from .presets import names, preset, presets
+from .interference import Arcing, Smps, arcing, arcing_noise, smps, smps_noise
 from .noise import qrn, qrn_noise, vd_bandwidth
 from .receiver import Agc, Receiver, bandpass_taps
 
 __all__ = ["Channel", "Component", "Path", "awgn", "power", "scatter", "specular", "tap_gain", "names", "preset", "presets",
-           "Agc", "Receiver", "bandpass_taps", "qrn", "qrn_noise", "vd_bandwidth"]
+           "Agc", "Receiver", "bandpass_taps", "qrn", "qrn_noise", "vd_bandwidth",
+           "Arcing", "Smps", "arcing", "arcing_noise", "smps", "smps_noise"]
 __version__ = "0.1.0"
