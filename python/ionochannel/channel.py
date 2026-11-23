@@ -54,7 +54,7 @@ def specular(delay_s: float, power: float, shift_hz: float = 0.0) -> Path:
     return Path(delay_s, (Component(power, 0.0, shift_hz, specular=True),))
 
 
-def _scatter_gain(shape: tuple[int, ...], n: int, fs: float, spread: float, rng) -> np.ndarray:
+def _scatter_gain(shape: tuple[int, ...], n: int, fs: float, spread: float, rng, rate=None) -> np.ndarray:
     """Unit-power complex Gaussian process with a Gaussian spectrum of
     2 sigma = spread: shaped white noise at a low rate (FFT, with a margin
     so the circular wrap is far below the needed correlation), then
@@ -64,22 +64,34 @@ def _scatter_gain(shape: tuple[int, ...], n: int, fs: float, spread: float, rng)
     low = max(OVERSAMPLE * spread, MIN_LOW_RATE)
     sigma = spread / 2
     margin = int(np.ceil(4.0 / (np.pi * sigma) * low))   # |R| < 1e-6 beyond
-    m_low = int(np.ceil(n / fs * low)) + 2
+    if rate is not None:
+        # time-warped: positions advance by `rate` (<= 1) per sample
+        pos = (np.cumsum(rate, axis=-1) - rate[..., :1]) * (low / fs)
+        m_low = int(np.ceil(pos.max())) + 2
+    else:
+        m_low = int(np.ceil(n / fs * low)) + 2
     m = fast_len(m_low + margin)
     w = (rng.standard_normal((*shape, m)) + 1j * rng.standard_normal((*shape, m))) / np.sqrt(2)
     f = np.fft.fftfreq(m, 1 / low)
     h = np.exp(-(f ** 2) / (4 * sigma ** 2))              # |H|^2 = exp(-f^2 / 2 sigma^2)
     h /= np.sqrt(np.mean(h ** 2))
     g = np.fft.ifft(np.fft.fft(w, axis=-1) * h, axis=-1)[..., :m_low]
+    g = g.astype(np.complex64)
+    if rate is not None:
+        i0 = np.minimum(pos.astype(np.int64), m_low - 2)
+        frac = (pos - i0).astype(np.float32)
+        return np.take_along_axis(g, i0, -1) * (1 - frac) + np.take_along_axis(g, i0 + 1, -1) * frac
     pos = np.arange(n) * (low / fs)
     i0 = np.minimum(pos.astype(np.int64), m_low - 2)
     frac = (pos - i0).astype(np.float32)
-    g = g.astype(np.complex64)
     return g[..., i0] * (1 - frac) + g[..., i0 + 1] * frac
 
 
-def tap_gain(path: Path, n: int, fs: float, rng, shape: tuple[int, ...] = ()) -> np.ndarray:
-    """A path's tap gain over n samples, (*shape, n) complex."""
+def tap_gain(path: Path, n: int, fs: float, rng, shape: tuple[int, ...] = (), rate=None,
+             scale: float = 1.0) -> np.ndarray:
+    """A path's tap gain over n samples, (*shape, n) complex. `scale`
+    multiplies the scatter spreads; `rate` (*shape, n), <= 1, slows the
+    scatter down (a spread that changes over time)."""
     t = np.arange(n) / fs
     g = np.zeros((*shape, n), np.complex64)
     for c in path.components:
@@ -88,7 +100,7 @@ def tap_gain(path: Path, n: int, fs: float, rng, shape: tuple[int, ...] = ()) ->
             ph = np.exp(1j * TAU * rng.random((*shape, 1)))
             g += (np.sqrt(c.power) * ph * rot).astype(np.complex64)
         else:
-            g += np.float32(np.sqrt(c.power)) * _scatter_gain(shape, n, fs, c.spread_hz, rng) * rot
+            g += np.float32(np.sqrt(c.power)) * _scatter_gain(shape, n, fs, c.spread_hz * scale, rng, rate) * rot
     return g
 
 
@@ -117,11 +129,16 @@ def awgn(x: np.ndarray, snr_db, fs: float, rng, bw_hz: float = 2500.0, signal_po
 class Channel:
     """Paths at a sample rate; apply() fades whole arrays."""
 
-    def __init__(self, fs: float, paths):
+    def __init__(self, fs: float, paths, vary=None):
+        """vary: one Vary per path (or None) for paths that change over
+        time; see the vary module."""
         self.fs = float(fs)
         self.paths = tuple(paths)
         if not self.paths:
             raise ValueError("a channel needs at least one path")
+        self.vary = tuple(vary) if vary else ()
+        if self.vary and len(self.vary) != len(self.paths):
+            raise ValueError("vary needs one entry per path")
 
     def apply(self, x: np.ndarray, rng) -> np.ndarray:
         """Fade x (..., n): complex baseband, or real audio (through its
@@ -140,7 +157,37 @@ class Channel:
             X = X * np.where(f > 0, 2.0, np.where(f == 0, 1.0, 0.0))   # analytic signal
             f = np.where(f < 0, f + self.fs, f)                     # no negative half left
         y = np.zeros((*shape, n), np.complex64)
-        for p in self.paths:
-            xd = np.fft.ifft(X * np.exp(-1j * TAU * f * p.delay_s), axis=-1)[..., :n].astype(np.complex64)
-            y += tap_gain(p, n, self.fs, rng, shape) * xd
+        moving = [v is not None and not v.is_empty() for v in self.vary] or [False] * len(self.paths)
+        vrng = np.random.default_rng(rng.integers(2 ** 63)) if any(moving) else None
+        rows = int(np.prod(shape)) if shape else 1
+        for p, mv, v in zip(self.paths, moving, self.vary or [None] * len(self.paths)):
+            if not mv:
+                xd = np.fft.ifft(X * np.exp(-1j * TAU * f * p.delay_s), axis=-1)[..., :n].astype(np.complex64)
+                y += tap_gain(p, n, self.fs, rng, shape) * xd
+                continue
+            y += self._moving_path(p, v, X, f, shape, rows, n, rng, vrng)
         return y.real.astype(x.dtype if x.dtype.kind == "f" else np.float64) if real else y.astype(np.result_type(x.dtype, np.complex64))
+
+    def _moving_path(self, p, v, X, f, shape, rows, n, rng, vrng):
+        from .vary import bounds, moving_delay, trajectory
+        traj = lambda terms: trajectory(terms, rows, n, self.fs, vrng).reshape(*shape, n)  # noqa: E731
+        if v.delay_s:
+            z = np.fft.ifft(X, axis=-1)[..., :n].astype(np.complex64).reshape(rows, n)
+            dmax = max(0.0, (p.delay_s + bounds(v.delay_s)[1]) * self.fs)
+            d = np.clip((p.delay_s + traj(v.delay_s).reshape(rows, n)) * self.fs, 0, dmax)
+            xd = moving_delay(z, d).reshape(*shape, n)
+        else:
+            xd = np.fft.ifft(X * np.exp(-1j * TAU * f * p.delay_s), axis=-1)[..., :n].astype(np.complex64)
+        if v.spread_oct:
+            vmax = bounds(v.spread_oct)[1]
+            rate = 2.0 ** (traj(v.spread_oct) - vmax)
+            g = tap_gain(p, n, self.fs, rng, shape, rate=rate, scale=2.0 ** vmax)
+        else:
+            g = tap_gain(p, n, self.fs, rng, shape)
+        if v.power_db:
+            g = g * (10 ** (traj(v.power_db) / 20)).astype(np.float32)
+        if v.shift_hz:
+            dop = traj(v.shift_hz)
+            cyc = np.concatenate([np.zeros((*shape, 1)), np.cumsum(dop[..., :-1], axis=-1)], axis=-1) / self.fs
+            g = g * np.exp(1j * TAU * np.remainder(cyc, 1.0)).astype(np.complex64)
+        return g * xd

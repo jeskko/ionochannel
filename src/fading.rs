@@ -92,9 +92,11 @@ impl Scatter {
         self.noise.iter().zip(&self.taps).map(|(n, t)| n * t).sum()
     }
 
-    fn next(&mut self) -> Complex64 {
+    /// The next sample; `rate` (<= 1) slows the process down, which
+    /// narrows its spectrum by the same factor.
+    fn next(&mut self, rate: f64) -> Complex64 {
         let g = self.a + (self.b - self.a) * self.pos;
-        self.pos += self.step;
+        self.pos += self.step * rate;
         while self.pos >= 1.0 {
             self.pos -= 1.0;
             self.a = self.b;
@@ -149,6 +151,12 @@ pub struct TapGain {
 
 impl TapGain {
     pub fn new(components: &[Component], fs: f64, rng: &mut Rng) -> Self {
+        Self::scaled(components, fs, rng, 1.0)
+    }
+
+    /// As [`TapGain::new`], with every scatter spread multiplied by `scale`
+    /// (for [`TapGain::sample_warped`]).
+    pub(crate) fn scaled(components: &[Component], fs: f64, rng: &mut Rng, scale: f64) -> Self {
         let parts = components
             .iter()
             .map(|c| match *c {
@@ -158,7 +166,7 @@ impl TapGain {
                     shift_hz,
                 } => Part {
                     amp: power.sqrt(),
-                    scatter: Some(Scatter::new(spread_hz, fs, rng.fork())),
+                    scatter: Some(Scatter::new(spread_hz * scale, fs, rng.fork())),
                     shift: Shift::new(shift_hz, fs, 0.0),
                 },
                 Component::Specular { power, shift_hz } => Part {
@@ -172,12 +180,18 @@ impl TapGain {
     }
 
     pub fn sample(&mut self) -> Complex64 {
+        self.sample_warped(1.0)
+    }
+
+    /// A sample with the scatter processes running at `rate` (<= 1) of
+    /// their speed: spreads scaled by `rate`.
+    pub(crate) fn sample_warped(&mut self, rate: f64) -> Complex64 {
         self.parts
             .iter_mut()
             .map(|p| {
                 let s = p.shift.next() * p.amp;
                 match &mut p.scatter {
-                    Some(sc) => sc.next() * s,
+                    Some(sc) => sc.next(rate) * s,
                     None => s,
                 }
             })

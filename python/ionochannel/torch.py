@@ -34,6 +34,8 @@ from .presets import names, preset, presets  # noqa: F401
 from .receiver import Agc, agc_block, agc_gains, bandpass_taps
 from .recorded import default_band
 from .stations import Am, Cw, Radar, morse_units, random_text
+from .vary import FD_HALF, PHASES, Drift, Ramp, Sine, Vary, bounds, tid  # noqa: F401
+from .vary import table as _vary_table
 
 # ---------------------------------------------------------------- helpers
 
@@ -149,19 +151,27 @@ def _noise_var(x, snr_db, fs, bw_hz, signal_power, rows):
 # ---------------------------------------------------------------- channel
 
 
-def _scatter_gain(rows, n, fs, spread, gen, device, ctype):
+def _scatter_gain(rows, n, fs, spread, gen, device, ctype, rate=None):
     if spread <= 0:
         raise ValueError("a scatter component needs a spread > 0 (use specular for none)")
     low = max(OVERSAMPLE * spread, MIN_LOW_RATE)
     sigma = spread / 2
     margin = int(math.ceil(4.0 / (math.pi * sigma) * low))
-    m_low = int(math.ceil(n / fs * low)) + 2
+    if rate is not None:
+        pos = (torch.cumsum(rate.to(torch.float64), dim=-1) - rate[:, :1]) * (low / fs)
+        m_low = int(math.ceil(pos.max().item())) + 2
+    else:
+        m_low = int(math.ceil(n / fs * low)) + 2
     m = fast_len(m_low + margin)
     w = _crandn((rows, m), gen, device, ctype)
     f = torch.fft.fftfreq(m, 1 / low, device=device, dtype=torch.float64)
     h = torch.exp(-(f ** 2) / (4 * sigma ** 2))
     h = (h / torch.sqrt(torch.mean(h ** 2))).to(_rtype(ctype))
     g = torch.fft.ifft(torch.fft.fft(w, dim=-1) * h, dim=-1)[:, :m_low]
+    if rate is not None:
+        i0 = torch.clamp(pos.long(), max=m_low - 2)
+        frac = (pos - i0).to(_rtype(ctype))
+        return torch.gather(g, 1, i0) * (1 - frac) + torch.gather(g, 1, i0 + 1) * frac
     pos = torch.arange(n, device=device, dtype=torch.float64) * (low / fs)
     i0 = torch.clamp(pos.long(), max=m_low - 2)
     frac = (pos - i0).to(_rtype(ctype))
@@ -169,8 +179,9 @@ def _scatter_gain(rows, n, fs, spread, gen, device, ctype):
 
 
 def tap_gain(path: Path, n: int, fs: float, gen, rows: int = 1, device=None,
-             ctype=torch.complex64) -> torch.Tensor:
-    """A path's tap gain over n samples, (rows, n) complex."""
+             ctype=torch.complex64, rate=None, scale: float = 1.0) -> torch.Tensor:
+    """A path's tap gain over n samples, (rows, n) complex; `scale` and
+    `rate` as in the numpy tap_gain."""
     device = device or gen.device
     g = torch.zeros((rows, n), dtype=ctype, device=device)
     for c in path.components:
@@ -179,18 +190,23 @@ def tap_gain(path: Path, n: int, fs: float, gen, rows: int = 1, device=None,
             ph = _phasor(_rand((rows, 1), gen, device, torch.float64), ctype)
             g = g + math.sqrt(c.power) * ph * rot
         else:
-            g = g + math.sqrt(c.power) * _scatter_gain(rows, n, fs, c.spread_hz, gen, device, ctype) * rot
+            g = g + math.sqrt(c.power) * _scatter_gain(rows, n, fs, c.spread_hz * scale, gen, device, ctype,
+                                                       rate) * rot
     return g
 
 
 class Channel:
     """Paths at a sample rate; apply() fades whole tensors."""
 
-    def __init__(self, fs: float, paths):
+    def __init__(self, fs: float, paths, vary=None):
+        """vary: one ic.Vary per path (or None), as the numpy Channel."""
         self.fs = float(fs)
         self.paths = tuple(paths)
         if not self.paths:
             raise ValueError("a channel needs at least one path")
+        self.vary = tuple(vary) if vary else ()
+        if self.vary and len(self.vary) != len(self.paths):
+            raise ValueError("vary needs one entry per path")
 
     def apply(self, x: torch.Tensor, gen) -> torch.Tensor:
         """Fade x (..., n): complex baseband or real audio (through its
@@ -207,12 +223,95 @@ class Channel:
             X = X * torch.where(f > 0, 2.0, torch.where(f == 0, 1.0, 0.0)).to(X.dtype)
             f = torch.where(f < 0, f + self.fs, f)
         y = torch.zeros((rows, n), dtype=ct, device=x.device)
-        for p in self.paths:
-            d = _phasor(-f * p.delay_s, ct)
-            xd = torch.fft.ifft(X * d, dim=-1)[:, :n]
-            y = y + tap_gain(p, n, self.fs, gen, rows, x.device, ct) * xd
+        vs = self.vary or (None,) * len(self.paths)
+        for p, v in zip(self.paths, vs):
+            if v is not None and v.delay_s:
+                z = torch.fft.ifft(X, dim=-1)[:, :n]
+                dmax = max(0.0, (p.delay_s + bounds(v.delay_s)[1]) * self.fs)
+                d = torch.clamp((p.delay_s + trajectory(v.delay_s, rows, n, self.fs, gen)) * self.fs, 0, dmax)
+                xd = moving_delay(z, d)
+            else:
+                xd = torch.fft.ifft(X * _phasor(-f * p.delay_s, ct), dim=-1)[:, :n]
+            if v is None or v.is_empty():
+                y = y + tap_gain(p, n, self.fs, gen, rows, x.device, ct) * xd
+                continue
+            if v.spread_oct:
+                vmax = bounds(v.spread_oct)[1]
+                rate = 2.0 ** (trajectory(v.spread_oct, rows, n, self.fs, gen) - vmax)
+                g = tap_gain(p, n, self.fs, gen, rows, x.device, ct, rate=rate, scale=2.0 ** vmax)
+            else:
+                g = tap_gain(p, n, self.fs, gen, rows, x.device, ct)
+            if v.power_db:
+                g = g * (10 ** (trajectory(v.power_db, rows, n, self.fs, gen) / 20)).to(_rtype(ct))
+            if v.shift_hz:
+                dop = trajectory(v.shift_hz, rows, n, self.fs, gen)
+                cyc = torch.cat([torch.zeros((rows, 1), dtype=torch.float64, device=x.device),
+                                 torch.cumsum(dop[:, :-1], dim=-1)], dim=-1) / self.fs
+                g = g * _phasor(cyc, ct)
+            y = y + g * xd
         out = y.real.to(x.dtype) if real else y
         return out.reshape(*shape, n)
+
+
+def trajectory(terms, rows: int, n: int, fs: float, gen) -> torch.Tensor:
+    """A trajectory's value (rows, n), float64, on gen's device."""
+    device = gen.device
+    t = torch.arange(n, device=device, dtype=torch.float64) / fs
+    v = torch.zeros((rows, n), dtype=torch.float64, device=device)
+    for term in terms:
+        if isinstance(term, Ramp):
+            if term.t1_s > term.t0_s:
+                fr = torch.clamp((t - term.t0_s) / (term.t1_s - term.t0_s), 0, 1)
+            else:
+                fr = (t > term.t0_s).to(torch.float64)
+            v = v + term.from_ + (term.to - term.from_) * fr
+        elif isinstance(term, Sine):
+            v = v + term.amp * torch.sin(TAU * t / term.period_s + term.phase)
+        else:
+            rho = math.exp(-1 / (fs * term.tau_s)) if term.tau_s > 0 else 0.0
+            v = v + torch.clamp(_ar1(rows, n, rho, term.rms, gen, device), -4 * term.rms, 4 * term.rms)
+    return v
+
+
+def _ar1(rows, n, rho, rms, gen, device):
+    """Stationary AR(1) of std rms by block-wise closed form."""
+    w = _randn((rows, n), gen, device, torch.float64) * rms * math.sqrt(1 - rho * rho)
+    w[:, 0] = _randn((rows,), gen, device, torch.float64) * rms
+    if rho == 0:
+        return w
+    blk = max(1, int(30 / -math.log(rho)))
+    y = torch.empty_like(w)
+    carry = torch.zeros(rows, dtype=torch.float64, device=device)
+    for a in range(0, n, blk):
+        seg = w[:, a:a + blk]
+        p = rho ** torch.arange(seg.shape[1], device=device, dtype=torch.float64)
+        y[:, a:a + blk] = p * (carry[:, None] * rho + torch.cumsum(seg / p, dim=-1))
+        carry = y[:, a + seg.shape[1] - 1]
+    return y
+
+
+def moving_delay(x: torch.Tensor, d: torch.Tensor, chunk: int = 4096) -> torch.Tensor:
+    """y[n] = x(n - d[n]) for complex x (rows, n), delays d (rows, n) in
+    samples, with the numpy fractional-delay table; no latency."""
+    rows, n = x.shape
+    rt = _rtype(x.dtype)
+    tab = torch.as_tensor(_vary_table(), dtype=rt, device=x.device)
+    pad = int(math.ceil(d.max().item())) + 1 + FD_HALF + 2
+    xp = torch.cat([torch.zeros((rows, pad), dtype=x.dtype, device=x.device), x,
+                    torch.zeros((rows, FD_HALF + 1), dtype=x.dtype, device=x.device)], dim=1)
+    y = torch.empty_like(x)
+    k = torch.arange(2 * FD_HALF + 1, device=x.device)
+    for a in range(0, n, chunk):
+        dd = d[:, a:a + chunk]
+        w = torch.floor(dd)
+        ph = (dd - w) * PHASES
+        k0 = torch.clamp(ph.long(), max=PHASES - 1)
+        al = (ph - k0)[..., None].to(rt)
+        taps = tab[k0] * (1 - al) + tab[k0 + 1] * al
+        i = torch.arange(a, a + dd.shape[1], device=x.device)[None, :] - w.long()
+        idx = (i[..., None] + FD_HALF - k + pad).reshape(rows, -1)
+        y[:, a:a + chunk] = (torch.gather(xp, 1, idx).reshape(rows, -1, k.numel()) * taps).sum(-1)
+    return y
 
 
 def awgn(x: torch.Tensor, snr_db, fs: float, gen, bw_hz: float = 2500.0, signal_power=None) -> torch.Tensor:

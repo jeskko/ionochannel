@@ -31,6 +31,7 @@ pub mod receiver;
 pub mod recorded;
 pub mod rng;
 pub mod stations;
+pub mod vary;
 pub mod wav;
 
 pub use channel::{Channel, PathSpec, RealChannel};
@@ -41,3 +42,4 @@ pub use receiver::{Agc, RealReceiver, Receiver, ReceiverSpec};
 pub use recorded::Recorded;
 pub use rng::Rng;
 pub use stations::{Am, AmSpec, Cw, CwSpec, Radar, RadarSpec};
+pub use vary::{Term, Vary};

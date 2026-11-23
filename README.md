@@ -10,9 +10,8 @@ white noise, impulsive atmospheric noise (QRN), man-made interference
 (switching-supply combs, powerline arcing), interfering stations (CW,
 AM, carriers, radar), recorded noise mixed in at an SNR, and the receiver
 (mistuning, passband, AGC) are done and checked against theory, ITU-R
-P.372 or their own parameters. The Python package has a PyTorch backend
-for the GPU. Conditions that change over time are next (see
-[Roadmap](#roadmap)).
+P.372 or their own parameters. Paths can change over time (drift, TIDs,
+ramps). The Python package has a PyTorch backend for the GPU.
 
 ## The model
 
@@ -48,6 +47,53 @@ pulls apart AM sidebands, RTTY tones and OFDM carriers.
 It works on complex baseband (IQ), or on real audio through the analytic
 signal. On audio, a positive Doppler shift moves the audio up; for LSB
 audio, flip the sign of the shift.
+
+## Conditions that change over time
+
+The Watterson model is stationary, and measured channels stay so for
+minutes at most. Each path's delay, Doppler shift, power and spread can
+follow a trajectory, a sum of terms added to the path's own value:
+
+| term | value |
+|---|---|
+| `Ramp(t0, t1, from, to)` | linear from `from` at t0 to `to` at t1, held before and after |
+| `Sine(amp, period, phase)` | amp · sin(2πt / period + phase) |
+| `Drift(rms, tau)` | a random drift (Ornstein-Uhlenbeck), correlation time tau, clamped at ±4 rms |
+
+- **Units:** delay in seconds (clamped at 0), shift in Hz on top of the
+  path's own, power in dB, and spread in octaves.
+  - Spread +1 doubles every scatter spread on the path. It works by
+    slowing down a fading process made for the largest spread reached,
+    so the process stays oversampled at least 32 times.
+  - A path can fade in or out with a power ramp, for example from 0 to
+    −40 dB.
+- **TIDs:** `tid(carrier_hz, path_km, rel_amp, period_s)` moves delay and
+  Doppler together. The path length P swings by `rel_amp` × P. The delay
+  follows P / c, and the Doppler shift follows −(f / c) dP/dt (Trop et
+  al. 2024, eq. 4), a quarter period ahead. It treats phase and group
+  path as moving together. Typical values:
+  - Oinats et al. (2016), with HF radars: most often periods of 60–100
+    min and relative amplitudes of 3–8 %.
+  - Medium-scale TIDs run 15–60 min, large-scale 30–180 min.
+  - At 7 MHz over 800 km with 5 % and 60 min, the delay swings ±0.13 ms
+    and the Doppler ±1.6 Hz.
+- **Seeds:** the changes draw their own random numbers, so a channel's
+  fading for a seed is the same with or without them. A test pins the
+  Rust outputs for a set of seeds.
+- **Cost:** a moving delay uses the same 33-tap fractional-delay filter
+  as fixed ones, interpolated from 512 phases. In numpy that makes a
+  batch of 128 × 4 s about 7 times slower (5 s); on the GPU it takes
+  62 ms. Over a 4 s clip a TID moves the delay by less than 1 µs, so for
+  short clips you can leave the delay out and keep the Doppler.
+
+```python
+vary = [ic.tid(7e6, 800, 0.05, 3600),
+        ic.Vary(shift_hz=(ic.Drift(0.5, 30),), power_db=(ic.Ramp(10, 20, 0, -40),))]
+y = ic.Channel(12000, ic.preset("moderate"), vary=vary).apply(x, rng)
+```
+
+In Rust, `Channel::with_variation(fs, &paths, &vary, seed)` (and the same
+on `RealChannel`) takes one `Vary` per path. `Channel::new` is unchanged.
 
 ## Atmospheric noise (QRN)
 
@@ -279,6 +325,9 @@ ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav ou
 - **Stations** (each can be repeated): `--cw DB,F[,WPM]`, `--am DB,F`,
   `--carrier DB,F`, `--radar DB,F[,SWEEP_HZ,RATE_HZ]`. The stations don't
   go through the channel; each is added after it, at its own level.
+- **Changes over time:** `--tid F_MHZ,KM,REL,MIN[,DEG]` puts the same TID
+  on every path. `--doppler-drift RMS_HZ,TAU_S` makes each path's
+  Doppler drift at random.
 - **Recorded noise:** `--noise-file PATH,DB` mixes a WAV recording in
   at an SNR in `--bw`; `--noise-band LO,HI` sets the band its level is
   measured in.
@@ -436,6 +485,20 @@ Stations are tested against their parameters
   0 Hz is dropped, not folded.
 - **Radar:** sweep rate within 1 %; in-band time as expected.
 
+Paths that change ([`tests/vary.rs`](tests/vary.rs),
+[`python/tests/test_vary.py`](python/tests/test_vary.py)):
+
+- **Doppler:** a sine of shift is followed to 0.05 Hz.
+- **Power:** ramps reach their levels.
+- **Spread:** stepping up an octave doubles the measured spread (within
+  6 %) and keeps the power.
+- **Delay:** a sine of delay shows as the expected carrier phase, to
+  0.01 rad. A moving delay held still matches the FFT delay.
+- **Drift:** the rms is within 10 %.
+- **TID:** the Doppler equals −f times the rate of change of the delay.
+- **Seeds:** [`tests/regression.rs`](tests/regression.rs) pins the
+  outputs of `Channel::new` for a set of seeds.
+
 Recorded noise ([`tests/recorded.rs`](tests/recorded.rs),
 [`python/tests/test_recorded.py`](python/tests/test_recorded.py)): a white
 recording comes out at the same power as `awgn` at the same SNR, within
@@ -493,6 +556,20 @@ Stations are tested against their parameters
   0 Hz is dropped, not folded.
 - **Radar:** sweep rate within 1 %; in-band time as expected.
 
+Paths that change ([`tests/vary.rs`](tests/vary.rs),
+[`python/tests/test_vary.py`](python/tests/test_vary.py)):
+
+- **Doppler:** a sine of shift is followed to 0.05 Hz.
+- **Power:** ramps reach their levels.
+- **Spread:** stepping up an octave doubles the measured spread (within
+  6 %) and keeps the power.
+- **Delay:** a sine of delay shows as the expected carrier phase, to
+  0.01 rad. A moving delay held still matches the FFT delay.
+- **Drift:** the rms is within 10 %.
+- **TID:** the Doppler equals −f times the rate of change of the delay.
+- **Seeds:** [`tests/regression.rs`](tests/regression.rs) pins the
+  outputs of `Channel::new` for a set of seeds.
+
 Recorded noise ([`tests/recorded.rs`](tests/recorded.rs),
 [`python/tests/test_recorded.py`](python/tests/test_recorded.py)): a white
 recording comes out at the same power as `awgn` at the same SNR, within
@@ -519,6 +596,7 @@ python3 python/tests/test_noise.py
 python3 python/tests/test_interference.py
 python3 python/tests/test_stations.py
 python3 python/tests/test_recorded.py
+python3 python/tests/test_vary.py
 python3 python/tests/test_torch.py      # GPU if there is one; IONOCHANNEL_TORCH_DEVICE=cpu to force
 nice -n 10 python3 tools/check_qrn.py   # QRN against P.372, about 20 s
 ```
@@ -540,13 +618,13 @@ synthetic tests for CW and FSK decoders. Background for each item is in
    stations per band (Mendieta-Otero et al. 2014).
 4. **Recorded noise:** done.
 5. **PyTorch backend:** done.
-6. **Conditions that change over time:** each path's delay, shift,
-   spread and power drift slowly, or are replayed from measured Doppler
-   records (HamSCI Grape: WWV/CHU). That covers travelling ionospheric
-   disturbances, dawn and dusk, and paths that come and go.
-7. **More presets:** auroral substorm (DAMSON: spread 2–55 Hz, delay up
-   to 11 ms), polar cap, equatorial spread-F, and NVIS with ground wave,
-   sporadic E and F2 as separate paths.
+6. **Conditions that change over time:** done (ramps, sines, drift,
+   TIDs). Still to do: replaying measured Doppler records (HamSCI Grape:
+   WWV/CHU).
+7. **More presets:** polar cap, trough and auroral done (Stocker et al.
+   2013, Angling et al. 1998). Still to do: equatorial spread-F, and NVIS
+   with ground wave, sporadic E and F2 as separate paths (the paper
+   found doesn't give usable numbers).
 8. **A wideband mode** (Vogler & Hoffmeyer) for signals wider than about
    12 kHz.
 9. **Absorption events:** a sudden ionospheric disturbance fade-out and

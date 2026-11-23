@@ -9,8 +9,9 @@
 
 use crate::fading::{Component, TapGain};
 use crate::rng::Rng;
+use crate::vary::{Run, Vary, bounds};
 use num_complex::{Complex32, Complex64};
-use std::f64::consts::PI;
+use std::f64::consts::{PI, TAU};
 
 /// One propagation path: its delay after the first path, its components.
 #[derive(Clone, Debug, PartialEq)]
@@ -54,7 +55,23 @@ struct Path {
     /// Fractional-delay taps, or empty for a whole-sample delay.
     taps: Vec<f32>,
     gain: TapGain,
+    moving: Option<Box<Moving>>,
 }
+
+/// The parts of a path that change over time.
+struct Moving {
+    /// Delay run, the path's own delay and the largest delay (samples).
+    delay: Option<(Run, f64, f64)>,
+    shift: Option<Run>,
+    power: Option<Run>,
+    /// Spread run (octaves) and its largest value.
+    spread: Option<(Run, f64)>,
+    /// Integrated extra Doppler, in cycles.
+    cycles: f64,
+}
+
+/// Phases of the fractional-delay table for moving delays.
+const PHASES: usize = 512;
 
 pub struct Channel {
     paths: Vec<Path>,
@@ -62,6 +79,9 @@ pub struct Channel {
     /// Input history, newest last; long enough for the longest path.
     hist: Vec<Complex32>,
     keep: usize,
+    fs: f64,
+    /// Fractional-delay taps at PHASES + 1 phases, if any delay moves.
+    table: Vec<Vec<f32>>,
 }
 
 fn frac_taps(frac: f64) -> Vec<f32> {
@@ -89,17 +109,36 @@ impl Channel {
     /// A channel at sample rate `fs` (Hz) over the given paths; `seed` fixes
     /// the fading realisation.
     pub fn new(fs: f64, paths: &[PathSpec], seed: u64) -> Self {
+        Self::with_variation(fs, paths, &[], seed)
+    }
+
+    /// A channel whose paths change over time: `vary` has one entry per
+    /// path (or is empty). The changes draw on their own random numbers,
+    /// so the fading for a seed is the same as from [`Channel::new`]. A
+    /// moving delay makes the channel use the fractional-delay filter
+    /// (latency 16 samples).
+    pub fn with_variation(fs: f64, paths: &[PathSpec], vary: &[Vary], seed: u64) -> Self {
         assert!(!paths.is_empty(), "a channel needs at least one path");
+        assert!(
+            vary.is_empty() || vary.len() == paths.len(),
+            "vary needs one entry per path"
+        );
+        let none = Vary::default();
+        let vary_of = |i: usize| vary.get(i).unwrap_or(&none);
         let mut rng = Rng::new(seed);
+        let mut vrng = Rng::new(seed ^ 0x7661_7279_7661_7279);
         let d: Vec<f64> = paths.iter().map(|p| p.delay_s * fs).collect();
         assert!(d.iter().all(|&v| v >= 0.0), "path delays must be >= 0");
-        let fractional = d.iter().any(|&v| (v - v.round()).abs() > 1e-6);
+        let moving_delay = (0..paths.len()).any(|i| !vary_of(i).delay_s.is_empty());
+        let fractional = moving_delay || d.iter().any(|&v| (v - v.round()).abs() > 1e-6);
         let latency = if fractional { FD_HALF } else { 0 };
         let mut keep = 0;
         let paths: Vec<Path> = paths
             .iter()
             .zip(&d)
-            .map(|(p, &dv)| {
+            .enumerate()
+            .map(|(i, (p, &dv))| {
+                let v = vary_of(i);
                 let (whole, taps) = if fractional {
                     let w = dv.floor();
                     (w as usize, frac_taps(dv - w))
@@ -107,18 +146,56 @@ impl Channel {
                     (dv.round() as usize, Vec::new())
                 };
                 keep = keep.max(whole + taps.len());
+                let gain = if v.spread_oct.is_empty() {
+                    TapGain::new(&p.components, fs, &mut rng.fork())
+                } else {
+                    let vmax = bounds(&v.spread_oct).1;
+                    TapGain::scaled(&p.components, fs, &mut rng.fork(), 2f64.powf(vmax))
+                };
+                let moving = (!v.is_empty()).then(|| {
+                    let mut r = vrng.fork();
+                    let delay = (!v.delay_s.is_empty()).then(|| {
+                        let max = ((p.delay_s + bounds(&v.delay_s).1) * fs).max(0.0);
+                        keep = keep.max(max.ceil() as usize + 2 * FD_HALF + 2);
+                        (Run::new(&v.delay_s, fs, r.fork()), dv, max)
+                    });
+                    Box::new(Moving {
+                        delay,
+                        shift: (!v.shift_hz.is_empty())
+                            .then(|| Run::new(&v.shift_hz, fs, r.fork())),
+                        power: (!v.power_db.is_empty())
+                            .then(|| Run::new(&v.power_db, fs, r.fork())),
+                        spread: (!v.spread_oct.is_empty()).then(|| {
+                            (
+                                Run::new(&v.spread_oct, fs, r.fork()),
+                                bounds(&v.spread_oct).1,
+                            )
+                        }),
+                        cycles: 0.0,
+                    })
+                });
                 Path {
                     whole,
                     taps,
-                    gain: TapGain::new(&p.components, fs, &mut rng.fork()),
+                    gain,
+                    moving,
                 }
             })
             .collect();
+        let table = if moving_delay {
+            (0..=PHASES)
+                .map(|k| frac_taps(k as f64 / PHASES as f64))
+                .collect()
+        } else {
+            Vec::new()
+        };
         Channel {
             paths,
             latency,
             hist: vec![Complex32::default(); keep],
             keep,
+            fs,
+            table,
         }
     }
 
@@ -135,17 +212,58 @@ impl Channel {
             // newest input for this output sample sits at hist[h + i]
             let mut acc = Complex64::default();
             for p in &mut self.paths {
-                let g = p.gain.sample();
-                let at = h + i - p.whole;
-                let v = if p.taps.is_empty() {
-                    self.hist[at]
-                } else {
-                    // taps[k] weights the input k samples back
-                    p.taps
-                        .iter()
-                        .enumerate()
-                        .map(|(k, t)| self.hist[at - k] * t)
-                        .sum()
+                let Some(m) = p.moving.as_mut() else {
+                    let g = p.gain.sample();
+                    let at = h + i - p.whole;
+                    let v = if p.taps.is_empty() {
+                        self.hist[at]
+                    } else {
+                        // taps[k] weights the input k samples back
+                        p.taps
+                            .iter()
+                            .enumerate()
+                            .map(|(k, t)| self.hist[at - k] * t)
+                            .sum()
+                    };
+                    acc += g * Complex64::new(v.re as f64, v.im as f64);
+                    continue;
+                };
+                let mut g = match m.spread.as_mut() {
+                    Some((run, vmax)) => p.gain.sample_warped(2f64.powf(run.next() - *vmax)),
+                    None => p.gain.sample(),
+                };
+                if let Some(run) = m.power.as_mut() {
+                    g *= 10f64.powf(run.next() / 20.0);
+                }
+                if let Some(run) = m.shift.as_mut() {
+                    g *= Complex64::from_polar(1.0, TAU * m.cycles);
+                    m.cycles = (m.cycles + run.next() / self.fs).rem_euclid(1.0);
+                }
+                let v: Complex32 = match m.delay.as_mut() {
+                    Some((run, base, max)) => {
+                        let dd = (*base + run.next() * self.fs).clamp(0.0, *max);
+                        let w = dd.floor();
+                        let ph = (dd - w) * PHASES as f64;
+                        let k0 = (ph.floor() as usize).min(PHASES - 1);
+                        let a = (ph - k0 as f64) as f32;
+                        let (t0, t1) = (&self.table[k0], &self.table[k0 + 1]);
+                        let at = h + i - w as usize;
+                        (0..t0.len())
+                            .map(|k| self.hist[at - k] * ((1.0 - a) * t0[k] + a * t1[k]))
+                            .sum()
+                    }
+                    None => {
+                        let at = h + i - p.whole;
+                        if p.taps.is_empty() {
+                            self.hist[at]
+                        } else {
+                            p.taps
+                                .iter()
+                                .enumerate()
+                                .map(|(k, t)| self.hist[at - k] * t)
+                                .sum()
+                        }
+                    }
                 };
                 acc += g * Complex64::new(v.re as f64, v.im as f64);
             }
@@ -219,8 +337,13 @@ pub struct RealChannel {
 
 impl RealChannel {
     pub fn new(fs: f64, paths: &[PathSpec], seed: u64) -> Self {
+        Self::with_variation(fs, paths, &[], seed)
+    }
+
+    /// As [`Channel::with_variation`], for real audio.
+    pub fn with_variation(fs: f64, paths: &[PathSpec], vary: &[Vary], seed: u64) -> Self {
         RealChannel {
-            ch: Channel::new(fs, paths, seed),
+            ch: Channel::with_variation(fs, paths, vary, seed),
             analytic: Analytic::new(),
             buf: Vec::new(),
         }

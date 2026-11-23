@@ -4,6 +4,7 @@
 //!               [--snr DB] [--qrn DB,VD] [--smps DB,F[,SP]] [--arcing DB]
 //!               [--mains HZ] [--cw DB,F[,WPM]]... [--am DB,F]... [--carrier DB,F]...
 //!               [--radar DB,F[,SWEEP_HZ,RATE_HZ]]... [--noise-file PATH,DB [--noise-band LO,HI]]
+//!               [--tid F,KM,REL,MIN[,DEG]] [--doppler-drift RMS,TAU]
 //!               [--bw HZ] [--seed N] [--rate HZ]
 //!               [--mistune HZ] [--passband LO,HI [--transition HZ]]
 //!               [--agc DECAY_MS[,HANG_MS[,ATTACK_MS]]] [--ssb] IN OUT
@@ -13,10 +14,11 @@
 //! float32, needs --rate). The output lines up with the input (the
 //! filters' latency taken out) and keeps its format.
 
+use ionochannel::vary::tid;
 use ionochannel::{
     Agc, Am, AmSpec, Arcing, ArcingSpec, Channel, Component, Cw, CwSpec, PathSpec, Qrn, Radar,
     RadarSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Recorded, Rng, Smps, SmpsSpec,
-    noise, presets, qrn, wav,
+    Term, Vary, noise, presets, qrn, wav,
 };
 use num_complex::Complex32;
 use std::process::exit;
@@ -27,6 +29,11 @@ const USAGE: &str =
   --path D,S[,F[,P]]      a Rayleigh path: delay ms, spread Hz (2 sigma), shift Hz, power
                           (repeat for more paths; powers default to equal shares)
   --specular D,P[,F]      a steady path: delay ms, power, shift Hz
+  --tid F,KM,REL,MIN[,DEG]  a travelling ionospheric disturbance on every path: carrier MHz,
+                          path km, relative amplitude of the path (0.03-0.08 typical),
+                          period minutes (60-100 typical), phase degrees; moves delay and
+                          Doppler together
+  --doppler-drift RMS,TAU  each path's Doppler shift drifts at random: rms Hz, correlation s
   --snr DB                add white noise: SNR of the input's mean power in --bw
   --qrn DB,VD             add impulsive atmospheric noise: SNR in --bw, P.372 Vd (dB, 200 Hz;
                           1.05 = Gaussian, up to 14)
@@ -159,6 +166,8 @@ fn main() {
     let mut mains = 50.0;
     let mut stations: Vec<Station> = Vec::new();
     let mut noise_file: Option<(String, f64)> = None;
+    let mut tid_arg: Option<Vec<f64>> = None;
+    let mut drift_arg: Option<(f64, f64)> = None;
     let mut noise_band: Option<(f64, f64)> = None;
     while let Some(arg) = a.next() {
         let mut val = |n: &str| {
@@ -297,6 +306,20 @@ fn main() {
                     f: v[1],
                 });
             }
+            "--tid" => {
+                let v = nums(&val("--tid"), 4, 5, "--tid");
+                if v[0] <= 0.0 || v[1] <= 0.0 || v[3] <= 0.0 {
+                    die("--tid: carrier, path length and period must be > 0");
+                }
+                tid_arg = Some(v);
+            }
+            "--doppler-drift" => {
+                let v = nums(&val("--doppler-drift"), 2, 2, "--doppler-drift");
+                if v[0] < 0.0 || v[1] <= 0.0 {
+                    die("--doppler-drift: rms >= 0, correlation time > 0");
+                }
+                drift_arg = Some((v[0], v[1]));
+            }
             "--noise-file" => {
                 let v = val("--noise-file");
                 let (path, db) = v
@@ -398,6 +421,28 @@ fn main() {
         }
     };
 
+    let vary: Vec<Vary> = if tid_arg.is_none() && drift_arg.is_none() {
+        Vec::new()
+    } else {
+        paths
+            .iter()
+            .map(|_| {
+                let mut v = tid_arg.as_ref().map_or_else(Vary::default, |t| {
+                    tid(
+                        t[0] * 1e6,
+                        t[1],
+                        t[2],
+                        t[3] * 60.0,
+                        t.get(4).copied().unwrap_or(0.0).to_radians(),
+                    )
+                });
+                if let Some((rms, tau_s)) = drift_arg {
+                    v.shift_hz.push(Term::Drift { rms, tau_s });
+                }
+                v
+            })
+            .collect()
+    };
     let (inp, out) = (&files[0], &files[1]);
     let is_cf32 = |f: &str| f.ends_with(".cf32");
     // read as real (mono wav) or complex (I/Q wav, cf32)
@@ -452,7 +497,7 @@ fn main() {
     if let Some(x) = real.as_mut() {
         let p0 = noise::power_r(x);
         if !paths.is_empty() {
-            let mut ch = RealChannel::new(fs, &paths, seed);
+            let mut ch = RealChannel::with_variation(fs, &paths, &vary, seed);
             let lat = ch.latency();
             x.extend(std::iter::repeat_n(0.0, lat));
             ch.process(x);
@@ -504,7 +549,7 @@ fn main() {
     if let Some(x) = cplx.as_mut() {
         let p0 = noise::power_c(x);
         if !paths.is_empty() {
-            let mut ch = Channel::new(fs, &paths, seed);
+            let mut ch = Channel::with_variation(fs, &paths, &vary, seed);
             let lat = ch.latency();
             x.extend(std::iter::repeat_n(Complex32::default(), lat));
             ch.process(x);
@@ -589,6 +634,15 @@ fn main() {
             "ionochannel: station {:?} at {} Hz, {} dB",
             st.kind, st.f, st.db
         );
+    }
+    if let Some(t) = &tid_arg {
+        eprintln!(
+            "ionochannel: TID {} MHz, {} km, {} relative, {} min",
+            t[0], t[1], t[2], t[3]
+        );
+    }
+    if let Some((rms, tau)) = drift_arg {
+        eprintln!("ionochannel: Doppler drift {rms} Hz rms, {tau} s");
     }
     if let Some((path, db)) = &noise_file {
         eprintln!("ionochannel: recorded noise {path} at {db} dB in {bw} Hz");

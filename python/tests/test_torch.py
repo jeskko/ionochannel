@@ -147,6 +147,36 @@ def test_mix_noise_matches_awgn():
     assert np.allclose(y.var(-1), 2.4, rtol=0.02)
 
 
+def test_time_varying_paths():
+    fs = 1000.0
+    x = torch.ones((2, 4000), dtype=torch.complex64, device=DEV)
+    y = np_(ict.Channel(fs, [ic.specular(0, 1.0)], vary=[ic.Vary(shift_hz=(ic.Sine(5.0, 1.0),))]).apply(x, gen(16)))
+    fi = np.angle(y[:, 1:] * np.conj(y[:, :-1])) * fs / TAU
+    assert np.max(np.abs(fi - 5 * np.sin(TAU * (np.arange(3999) + 0.5) / fs))) < 0.05
+    v = ic.Vary(power_db=(ic.Ramp(1.0, 2.0, 0.0, -20.0),))
+    a = np.abs(np_(ict.Channel(fs, [ic.specular(0, 1.0)], vary=[v]).apply(x, gen(17))))
+    assert np.allclose(a[:, 500], 1, atol=1e-5) and np.allclose(a[:, 2500], 0.1, atol=1e-5)
+    fs = 12000.0
+    t = np.arange(int(fs * 4)) / fs
+    z = torch.tensor(np.exp(1j * TAU * 1000 * t)[None], dtype=torch.complex64, device=DEV)
+    v = ic.Vary(delay_s=(ic.Sine(0.2e-3, 2.0),))
+    y = np_(ict.Channel(fs, [ic.specular(1e-3, 1.0)], vary=[v]).apply(z, gen(18)))[0]
+    tau = 1e-3 + 0.2e-3 * np.sin(TAU * t / 2)
+    d = np.angle(y * np.exp(-1j * TAU * 1000 * t)) + TAU * 1000 * tau
+    d = (d - d[2000] + np.pi) % TAU - np.pi
+    assert np.max(np.abs(d[2000:])) < 0.01
+    fs, secs = 100.0, 2000.0
+    v = ic.Vary(spread_oct=(ic.Ramp(secs / 2, secs / 2, 0.0, 1.0),))
+    g = np_(ict.Channel(fs, [ic.scatter(0, 1.0, 1.0)], vary=[v]).apply(
+        torch.ones((4, int(fs * secs)), dtype=torch.complex64, device=DEV), gen(19))).astype(np.complex128)
+    def spread(h, guess):
+        lag = int(round(np.sqrt(np.log(0.5) / -2) / (np.pi * guess / 2) * fs))
+        r = np.mean(h[:, lag:] * np.conj(h[:, :-lag])) / np.mean(np.abs(h) ** 2)
+        return 2 * np.sqrt(-np.log(abs(r)) / 2) / (np.pi * lag / fs)
+    half = g.shape[1] // 2
+    assert abs(spread(g[:, :half], 1.0) - 1) < 0.06 and abs(spread(g[:, half:], 2.0) - 2) < 0.12
+
+
 if __name__ == "__main__":
     if torch is None:
         print("skip: no torch")
