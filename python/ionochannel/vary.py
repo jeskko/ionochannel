@@ -138,13 +138,15 @@ def table() -> np.ndarray:
 
 
 def moving_delay(x: np.ndarray, d: np.ndarray, chunk: int = 2048) -> np.ndarray:
-    """y[n] = x(n - d[n]) for complex x (rows, n) and delays d (rows, n)
-    in samples (>= 0), with the fractional-delay table; no latency."""
+    """y[n] = x(n - d[n]) for x (rows, n), real or complex, and delays d
+    (rows, n) in samples (negative reads ahead), with the fractional-delay
+    table; no latency. Outside x is zero."""
     rows, n = x.shape
-    dmax = int(math.ceil(d.max())) + 1
+    dmax = int(math.ceil(max(d.max(), 0.0))) + 1
+    ahead = int(math.ceil(max(-d.min(), 0.0))) + 1
     pad = dmax + FD_HALF + 2
-    xp = np.concatenate([np.zeros((rows, pad), x.dtype), x, np.zeros((rows, FD_HALF + 1), x.dtype)], axis=1)
-    tab = table().astype(np.float32 if x.dtype == np.complex64 else np.float64)
+    xp = np.concatenate([np.zeros((rows, pad), x.dtype), x, np.zeros((rows, ahead + FD_HALF + 2), x.dtype)], axis=1)
+    tab = table().astype(np.float32 if x.dtype in (np.complex64, np.float32) else np.float64)
     y = np.empty_like(x)
     k = np.arange(2 * FD_HALF + 1)
     r = np.arange(rows)[:, None, None]

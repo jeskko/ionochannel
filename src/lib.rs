@@ -38,7 +38,7 @@ pub use channel::{Channel, PathSpec, RealChannel};
 pub use fading::Component;
 pub use interference::{Arcing, ArcingSpec, Smps, SmpsSpec};
 pub use qrn::Qrn;
-pub use receiver::{Agc, RealReceiver, Receiver, ReceiverSpec};
+pub use receiver::{Agc, Clock, RealReceiver, Receiver, ReceiverSpec};
 pub use recorded::Recorded;
 pub use rng::Rng;
 pub use stations::{Am, AmSpec, Cw, CwSpec, Radar, RadarSpec};

@@ -177,6 +177,17 @@ def test_time_varying_paths():
     assert abs(spread(g[:, :half], 1.0) - 1) < 0.06 and abs(spread(g[:, half:], 2.0) - 2) < 0.12
 
 
+def test_clock_offset():
+    fs = 12000.0
+    t = np.arange(int(fs * 10)) / fs
+    x = torch.tensor(np.exp(1j * TAU * 1000 * t)[None], dtype=torch.complex64, device=DEV)
+    y = np_(ict.clock_offset(x, 100.0))[0].astype(np.complex128)
+    fi = np.angle(y[1:] * np.conj(y[:-1])) * fs / TAU
+    assert abs(fi[100:-1000].mean() - 1000 / (1 + 1e-4)) < 1e-3
+    r = ict.Receiver(fs, clock_ppm=torch.tensor([50.0, -50.0])).apply(torch.zeros((2, 1000), device=DEV))
+    assert r.shape == (2, 1000)
+
+
 if __name__ == "__main__":
     if torch is None:
         print("skip: no torch")

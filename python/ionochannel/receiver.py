@@ -90,6 +90,22 @@ def agc_gains(p: np.ndarray, fs: float, a: Agc) -> np.ndarray:
     return g
 
 
+def clock_offset(x: np.ndarray, ppm) -> np.ndarray:
+    """The receiver's sample clock off by ppm (scalar or per row): output
+    sample k is the input at k / (1 + ppm 1e-6). A fast clock (ppm > 0)
+    stretches the signal: tones come out lower by that factor, a timing
+    recovery sees the symbol rate off by it. Same length as x; past the
+    end of the input it is zero."""
+    x = np.asarray(x)
+    n = x.shape[-1]
+    shape = x.shape[:-1]
+    rows = int(np.prod(shape)) if shape else 1
+    e = np.broadcast_to(np.asarray(ppm, float).reshape(-1, 1) if np.ndim(ppm) else np.asarray(ppm, float), (rows, 1)) * 1e-6
+    d = np.arange(n)[None, :] * (e / (1 + e))
+    from .vary import moving_delay
+    return moving_delay(x.reshape(rows, n), d).reshape(x.shape)
+
+
 class Receiver:
     """Mistuning (Hz; scalar or one per leading index; positive moves the
     audio up), a passband (lo, hi) at -6 dB or None, an Agc or None.
@@ -97,8 +113,11 @@ class Receiver:
     signal; the AGC follows its envelope)."""
 
     def __init__(self, fs: float, passband=None, mistune_hz=0.0, agc: Agc | None = None,
-                 transition_hz: float = 100.0):
+                 transition_hz: float = 100.0, clock_ppm=0.0):
+        """clock_ppm: the sample clock's error, applied first (see
+        clock_offset)."""
         self.fs = float(fs)
+        self.clock_ppm = clock_ppm
         self.passband = passband
         self.mistune_hz = mistune_hz
         self.agc = agc
@@ -111,6 +130,8 @@ class Receiver:
 
     def apply(self, x: np.ndarray) -> np.ndarray:
         x = np.asarray(x)
+        if np.any(np.asarray(self.clock_ppm) != 0):
+            x = clock_offset(x, self.clock_ppm)
         real = not np.iscomplexobj(x)
         n = x.shape[-1]
         ctype = np.complex64 if x.dtype in (np.float32, np.complex64) else np.complex128

@@ -342,3 +342,103 @@ impl RealReceiver {
         }
     }
 }
+
+/// The receiver's sample clock off by `ppm`: output sample k is the input
+/// at k / (1 + ppm 1e-6), interpolated with the channel's 33-tap
+/// fractional-delay filter (512 phases). A fast clock (ppm > 0) makes
+/// more samples than it is given: tones come out lower by that factor,
+/// symbols longer. Streams; each call returns what it can (the
+/// interpolator looks 16 samples ahead), [`Clock::flush_c`] the rest.
+pub struct Clock {
+    step: f64,
+    /// Outputs made so far.
+    k: u64,
+    /// Input history; `hist[0]` is input index `base`.
+    hist: VecDeque<Complex32>,
+    base: i64,
+    /// Inputs taken so far.
+    taken: i64,
+    table: Vec<Vec<f32>>,
+}
+
+impl Clock {
+    pub fn new(ppm: f64) -> Self {
+        use crate::channel::{PHASES, frac_taps};
+        Clock {
+            step: 1.0 / (1.0 + ppm * 1e-6),
+            k: 0,
+            hist: VecDeque::new(),
+            base: 0,
+            taken: 0,
+            table: (0..=PHASES)
+                .map(|i| frac_taps(i as f64 / PHASES as f64))
+                .collect(),
+        }
+    }
+
+    fn at(&self, i: i64) -> Complex32 {
+        if i < self.base || i >= self.base + self.hist.len() as i64 {
+            Complex32::default()
+        } else {
+            self.hist[(i - self.base) as usize]
+        }
+    }
+
+    /// Outputs while their inputs (up to index `upto`, exclusive) are in,
+    /// at most up to output `kmax`.
+    fn emit(&mut self, out: &mut Vec<Complex32>, upto: i64, kmax: u64) {
+        use crate::channel::{FD_HALF, PHASES};
+        while self.k < kmax {
+            let t = self.k as f64 * self.step;
+            let w = t.floor();
+            // taps[j] weights input m - j and delay by 16 + frac, so input
+            // time t = w + fr is m = w + 1 + 16 with frac = 1 - fr
+            let m = w as i64 + 1 + FD_HALF as i64;
+            if m >= upto {
+                break;
+            }
+            let ph = (1.0 - (t - w)) * PHASES as f64;
+            let k0 = (ph.floor() as usize).min(PHASES - 1);
+            let a = (ph - k0 as f64) as f32;
+            let (t0, t1) = (&self.table[k0], &self.table[k0 + 1]);
+            let y = (0..t0.len())
+                .map(|j| self.at(m - j as i64) * ((1.0 - a) * t0[j] + a * t1[j]))
+                .sum();
+            out.push(y);
+            self.k += 1;
+        }
+        // keep what the next outputs can still reach
+        let next = (self.k as f64 * self.step).floor() as i64 - FD_HALF as i64 - 1;
+        while self.base < next && !self.hist.is_empty() {
+            self.hist.pop_front();
+            self.base += 1;
+        }
+    }
+
+    /// Takes `x`, appends the outputs that are ready.
+    pub fn process_c(&mut self, x: &[Complex32], out: &mut Vec<Complex32>) {
+        self.hist.extend(x.iter().copied());
+        self.taken += x.len() as i64;
+        self.emit(out, self.taken, u64::MAX);
+    }
+
+    /// As [`Clock::process_c`] for real audio.
+    pub fn process_r(&mut self, x: &[f32], out: &mut Vec<f32>) {
+        let c: Vec<Complex32> = x.iter().map(|&v| Complex32::new(v, 0.0)).collect();
+        let mut o = Vec::new();
+        self.process_c(&c, &mut o);
+        out.extend(o.iter().map(|z| z.re));
+    }
+
+    /// The outputs up to `total` (the stream's length in output samples,
+    /// e.g. round(inputs * (1 + ppm 1e-6))), reading zeros past the end.
+    pub fn flush_c(&mut self, total: u64, out: &mut Vec<Complex32>) {
+        self.emit(out, i64::MAX, total);
+    }
+
+    pub fn flush_r(&mut self, total: u64, out: &mut Vec<f32>) {
+        let mut o = Vec::new();
+        self.flush_c(total, &mut o);
+        out.extend(o.iter().map(|z| z.re));
+    }
+}

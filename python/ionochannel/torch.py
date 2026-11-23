@@ -294,11 +294,12 @@ def moving_delay(x: torch.Tensor, d: torch.Tensor, chunk: int = 4096) -> torch.T
     """y[n] = x(n - d[n]) for complex x (rows, n), delays d (rows, n) in
     samples, with the numpy fractional-delay table; no latency."""
     rows, n = x.shape
-    rt = _rtype(x.dtype)
+    rt = x.dtype if not x.is_complex() else _rtype(x.dtype)
     tab = torch.as_tensor(_vary_table(), dtype=rt, device=x.device)
-    pad = int(math.ceil(d.max().item())) + 1 + FD_HALF + 2
+    pad = int(math.ceil(max(d.max().item(), 0.0))) + 1 + FD_HALF + 2
+    ahead = int(math.ceil(max(-d.min().item(), 0.0))) + 1
     xp = torch.cat([torch.zeros((rows, pad), dtype=x.dtype, device=x.device), x,
-                    torch.zeros((rows, FD_HALF + 1), dtype=x.dtype, device=x.device)], dim=1)
+                    torch.zeros((rows, ahead + FD_HALF + 2), dtype=x.dtype, device=x.device)], dim=1)
     y = torch.empty_like(x)
     k = torch.arange(2 * FD_HALF + 1, device=x.device)
     for a in range(0, n, chunk):
@@ -329,13 +330,23 @@ def awgn(x: torch.Tensor, snr_db, fs: float, gen, bw_hz: float = 2500.0, signal_
 # ---------------------------------------------------------------- receiver
 
 
+def clock_offset(x: torch.Tensor, ppm) -> torch.Tensor:
+    """As the numpy clock_offset: output k is the input at k / (1 + ppm 1e-6)."""
+    xr, shape, rows = _rows(x)
+    n = x.shape[-1]
+    e = _col(ppm, rows, x.device) * 1e-6
+    d = torch.arange(n, device=x.device, dtype=torch.float64)[None, :] * (e / (1 + e))
+    return moving_delay(xr, d).reshape(x.shape)
+
+
 class Receiver:
-    """As the numpy Receiver: mistuning (scalar or per row), a passband at
-    -6 dB, an Agc; on complex baseband or real audio."""
+    """As the numpy Receiver: clock error, mistuning (scalar or per row), a
+    passband at -6 dB, an Agc; on complex baseband or real audio."""
 
     def __init__(self, fs: float, passband=None, mistune_hz=0.0, agc: Agc | None = None,
-                 transition_hz: float = 100.0):
+                 transition_hz: float = 100.0, clock_ppm=0.0):
         self.fs = float(fs)
+        self.clock_ppm = clock_ppm
         self.mistune_hz = mistune_hz
         self.agc = agc
         self.taps = None if passband is None else bandpass_taps(self.fs, *passband, transition_hz)
@@ -345,6 +356,8 @@ class Receiver:
         return cls(fs, (300.0, 2700.0), mistune_hz, agc)
 
     def apply(self, x: torch.Tensor) -> torch.Tensor:
+        if bool(torch.any(torch.as_tensor(self.clock_ppm) != 0)):
+            x = clock_offset(x, self.clock_ppm)
         xr, shape, rows = _rows(x)
         n = x.shape[-1]
         real = not x.is_complex()

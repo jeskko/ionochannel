@@ -87,6 +87,17 @@ def test_rows_independent_agc():
     assert np.allclose(y[:, 1000:], 0.25, rtol=1e-3)
 
 
+def test_clock_offset():
+    t = np.arange(int(FS * 10)) / FS
+    for ppm in (100.0, -250.0):
+        y = ic.clock_offset(np.exp(1j * TAU * 1000 * t)[None], ppm)[0]
+        fi = np.angle(y[1:] * np.conj(y[:-1])) * FS / TAU
+        assert abs(fi[100:-1000].mean() - 1000 / (1 + ppm * 1e-6)) < 1e-4
+        assert np.max(np.abs(np.abs(y[100:-1000]) - 1)) < 2e-4
+    y = ic.Receiver(FS, clock_ppm=[50.0, -50.0]).apply(np.cos(TAU * 1000 * t)[None].repeat(2, 0))
+    assert y.shape == (2, len(t))
+
+
 if __name__ == "__main__":
     bad = 0
     for name, fn in sorted(globals().items()):

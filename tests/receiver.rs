@@ -213,3 +213,37 @@ fn streaming_block_size_independent() {
     }
     assert_eq!(a, b);
 }
+
+#[test]
+fn clock_offset_scales_frequency_and_streams() {
+    use ionochannel::Clock;
+    for ppm in [100.0, -250.0] {
+        let n = 120000;
+        let x = tone_c(1000.0, n, 1.0);
+        let mut y = Vec::new();
+        let mut c = Clock::new(ppm);
+        for b in x.chunks(777) {
+            c.process_c(b, &mut y);
+        }
+        let total = (n as f64 * (1.0 + ppm * 1e-6)).round() as u64;
+        c.flush_c(total, &mut y);
+        assert_eq!(y.len() as u64, total);
+        let want = 1000.0 / (1.0 + ppm * 1e-6);
+        let mid = &y[1000..n - 2000];
+        let f: f64 = mid
+            .windows(2)
+            .map(|w| (w[1] * w[0].conj()).arg() as f64)
+            .sum::<f64>()
+            / (mid.len() - 1) as f64
+            * FS
+            / TAU;
+        assert!((f - want).abs() < 1e-4, "{ppm}: {f} vs {want}");
+        assert!(mid.iter().all(|z| (z.norm() - 1.0).abs() < 2e-4));
+        // the same in one go
+        let mut z = Vec::new();
+        let mut c = Clock::new(ppm);
+        c.process_c(&x, &mut z);
+        c.flush_c(total, &mut z);
+        assert_eq!(y, z);
+    }
+}

@@ -16,9 +16,9 @@
 
 use ionochannel::vary::tid;
 use ionochannel::{
-    Agc, Am, AmSpec, Arcing, ArcingSpec, Channel, Component, Cw, CwSpec, PathSpec, Qrn, Radar,
-    RadarSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Recorded, Rng, Smps, SmpsSpec,
-    Term, Vary, noise, presets, qrn, wav,
+    Agc, Am, AmSpec, Arcing, ArcingSpec, Channel, Clock, Component, Cw, CwSpec, PathSpec, Qrn,
+    Radar, RadarSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Recorded, Rng, Smps,
+    SmpsSpec, Term, Vary, noise, presets, qrn, wav,
 };
 use num_complex::Complex32;
 use std::process::exit;
@@ -58,6 +58,8 @@ const USAGE: &str =
   --transition HZ         filter transition width [100]
   --agc D[,H[,A]]         AGC: decay, hang, attack in ms [500,0,2]; output peak 0.25
   --ssb                   --passband 300,2700 --agc 500
+  --clock PPM             the receiver's sample clock off by PPM (applied first; a fast clock
+                          makes the output longer and its tones lower)
   --list                  list the presets";
 
 fn die(m: &str) -> ! {
@@ -167,6 +169,7 @@ fn main() {
     let mut stations: Vec<Station> = Vec::new();
     let mut noise_file: Option<(String, f64)> = None;
     let mut tid_arg: Option<Vec<f64>> = None;
+    let mut clock_ppm: Option<f64> = None;
     let mut drift_arg: Option<(f64, f64)> = None;
     let mut noise_band: Option<(f64, f64)> = None;
     while let Some(arg) = a.next() {
@@ -306,6 +309,7 @@ fn main() {
                     f: v[1],
                 });
             }
+            "--clock" => clock_ppm = Some(nums(&val("--clock"), 1, 1, "--clock")[0]),
             "--tid" => {
                 let v = nums(&val("--tid"), 4, 5, "--tid");
                 if v[0] <= 0.0 || v[1] <= 0.0 || v[3] <= 0.0 {
@@ -538,6 +542,14 @@ fn main() {
                 bw,
             );
         }
+        if let Some(ppm) = clock_ppm {
+            let total = (x.len() as f64 * (1.0 + ppm * 1e-6)).round() as u64;
+            let mut c = Clock::new(ppm);
+            let mut y = Vec::with_capacity(total as usize);
+            c.process_r(x, &mut y);
+            c.flush_r(total, &mut y);
+            *x = y;
+        }
         if rx != ReceiverSpec::default() {
             let mut r = RealReceiver::new(fs, &rx);
             let lat = r.latency();
@@ -598,6 +610,14 @@ fn main() {
                 p0 / 10f64.powf(db / 10.0),
                 bw,
             );
+        }
+        if let Some(ppm) = clock_ppm {
+            let total = (x.len() as f64 * (1.0 + ppm * 1e-6)).round() as u64;
+            let mut c = Clock::new(ppm);
+            let mut y = Vec::with_capacity(total as usize);
+            c.process_c(x, &mut y);
+            c.flush_c(total, &mut y);
+            *x = y;
         }
         if rx != ReceiverSpec::default() {
             let mut r = Receiver::new(fs, &rx);

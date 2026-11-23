@@ -220,6 +220,13 @@ Real band noise from a recording, mixed in at an SNR (`mix_noise`,
 
 After the channel and the noise, in this order:
 
+- **Clock error** (`clock_ppm`, `--clock`): the receiver's sample clock
+  off by some ppm. Output sample k is the input at k / (1 + ppm·1e-6),
+  through the 33-tap fractional-delay filter. A fast clock makes the
+  output longer and its tones and symbol rate lower by that factor. In
+  Rust it's a separate streaming `Clock`, since it changes the number of
+  samples. In Python the output stays the same length, so rows can
+  batch; past the end of the input it is zero.
 - **Mistuning:** shifts everything by a frequency; positive moves the
   audio up. In Python it can be one value per batch row.
 - **Passband:** a linear-phase FIR with −6 dB points at the given edges,
@@ -521,6 +528,9 @@ The receiver is tested against its design
   below −59 dB at the stop edges and beyond.
 - **Mistuning:** a 1000 Hz tone comes out at 1150 Hz, with nothing left
   at 1000 or 850 Hz.
+- **Clock:** at +100 and −250 ppm a 1000 Hz tone comes out at
+  1000 / (1 + ppm·1e-6) Hz, within 1e-4 Hz, its amplitude flat within
+  2e-4. Streaming gives the same output in any block size.
 - **Latency:** the Rust output equals the input delayed by `latency()`.
   Python has none.
 - **AGC:** holds the target to 0.01 dB; after a 20 dB rise it is within
@@ -608,8 +618,7 @@ reduction (SSB voice, CW, AM broadcast) and for a signal identifier, and
 synthetic tests for CW and FSK decoders. Background for each item is in
 [docs/references.md](docs/references.md).
 
-1. **Receiver effects:** done: passband, mistuning, AGC. Still to do:
-   clock (sample rate) offset.
+1. **Receiver effects:** done.
 2. **Impulsive atmospheric noise:** done, calibrated to P.372 Vd.
    **Man-made interference:** switching-supply combs and powerline
    arcing done. Still to do: VDSL, powerline OFDM bursts, LED drivers.

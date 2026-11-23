@@ -47,7 +47,7 @@ impl PathSpec {
 }
 
 /// Half length of the fractional-delay filter.
-const FD_HALF: usize = 16;
+pub(crate) const FD_HALF: usize = 16;
 
 struct Path {
     /// Whole samples of delay (beyond the filter's own `FD_HALF`, if any).
@@ -71,7 +71,7 @@ struct Moving {
 }
 
 /// Phases of the fractional-delay table for moving delays.
-const PHASES: usize = 512;
+pub(crate) const PHASES: usize = 512;
 
 pub struct Channel {
     paths: Vec<Path>,
@@ -84,7 +84,7 @@ pub struct Channel {
     table: Vec<Vec<f32>>,
 }
 
-fn frac_taps(frac: f64) -> Vec<f32> {
+pub(crate) fn frac_taps(frac: f64) -> Vec<f32> {
     let n = 2 * FD_HALF + 1;
     let mut t: Vec<f64> = (0..n)
         .map(|k| {
