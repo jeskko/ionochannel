@@ -188,6 +188,17 @@ def test_clock_offset():
     assert r.shape == (2, 1000)
 
 
+def test_rtty_psk31():
+    fs = 12000.0
+    z = np_(ict.rtty_noise(2, int(fs * 10), fs, 1000.0, gen(20))).astype(np.complex128)
+    fi = np.angle(z[:, 1:] * np.conj(z[:, :-1])) * fs / TAU
+    assert np.mean((np.abs(fi - 1085) < 0.5) | (np.abs(fi - 915) < 0.5)) > 0.999
+    z = np_(ict.psk31_noise(1, int(fs * 20), fs, 1000.0, gen(21), ic.Psk31(idle=True)))[0]
+    t = np.arange(z.shape[-1]) / fs
+    a = lambda f: abs(np.mean(z * np.exp(-1j * TAU * f * t)))  # noqa: E731
+    assert abs(a(984.375) - 0.5) < 0.01 and abs(a(1015.625) - 0.5) < 0.01 and a(1000) < 0.01
+
+
 if __name__ == "__main__":
     if torch is None:
         print("skip: no torch")

@@ -83,6 +83,32 @@ def test_radar_sweep():
     assert abs(frac - 12000 * 0.9 / 20e3) < 0.02, frac
 
 
+def test_rtty_tones_and_timing():
+    z = ic.rtty_noise(2, int(FS * 20), FS, 1000.0, np.random.default_rng(9), ic.Rtty())
+    assert np.allclose(np.abs(z), 1, atol=1e-6)
+    fi = np.angle(z[:, 1:] * np.conj(z[:, :-1])) * FS / TAU
+    assert np.mean((np.abs(fi - 1085) < 0.5) | (np.abs(fi - 915) < 0.5)) > 0.999
+    # tone changes fall on whole bit periods from the first one
+    unit = FS / 45.45
+    ch = np.flatnonzero(np.diff(fi[0] > 1000)) + 1
+    off = ((ch - ch[0]) / unit * 2) % 1          # stop bits are 1.5 units: half-unit grid
+    assert np.all(np.minimum(off, 1 - off) < 2 / unit), np.max(np.minimum(off, 1 - off))
+
+
+def test_psk31_idle_tones_and_shape():
+    z = ic.psk31_noise(1, int(FS * 20), FS, 1000.0, np.random.default_rng(10), ic.Psk31(idle=True))[0]
+    for f, want in ((1000 - 15.625, 0.5), (1000 + 15.625, 0.5), (1000, 0.0)):
+        assert abs(amp(z, f) - want) < 0.01, (f, amp(z, f))
+    z = ic.psk31_noise(1, int(FS * 20), FS, 1000.0, np.random.default_rng(11), ic.Psk31())[0]
+    a = np.abs(z)
+    assert a.max() <= 1 + 1e-6 and a.min() < 0.01
+    assert 0.6 < np.mean(a ** 2) < 0.95          # reversals dip; holds stay at 1
+    bits = ic.stations._psk31_bits(5000, False, np.random.default_rng(12))
+    s = "".join(map(str, bits))
+    words = [w for w in s.split("00") if w]
+    assert all(w[0] == "1" and w[-1] == "1" and "00" not in w for w in words[1:-1])
+
+
 if __name__ == "__main__":
     bad = 0
     for name, fn in sorted(globals().items()):

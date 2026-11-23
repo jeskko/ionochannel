@@ -2,7 +2,7 @@
 //! edges, AM carrier and bandwidth, radar sweep rate, streaming.
 
 use ionochannel::stations::morse_units;
-use ionochannel::{Am, AmSpec, Cw, CwSpec, Radar, RadarSpec};
+use ionochannel::{Am, AmSpec, Cw, CwSpec, Psk31, Psk31Spec, Radar, RadarSpec, Rtty, RttySpec};
 use num_complex::{Complex32, Complex64};
 use std::f64::consts::TAU;
 
@@ -141,4 +141,47 @@ fn streaming_and_fading() {
         s.add_r(c, 1.0);
     }
     assert_eq!(a, b);
+}
+
+#[test]
+fn rtty_tones_and_timing() {
+    let mut z = vec![Complex32::default(); (FS * 20.0) as usize];
+    Rtty::new(FS, 1000.0, &RttySpec::default(), false, 9).add_c(&mut z, 1.0);
+    assert!(z.iter().all(|v| (v.norm() - 1.0).abs() < 1e-5));
+    let fi: Vec<f64> = z
+        .windows(2)
+        .map(|w| (w[1] * w[0].conj()).arg() as f64 * FS / TAU)
+        .collect();
+    let on = fi
+        .iter()
+        .filter(|f| (*f - 1085.0).abs() < 0.5 || (*f - 915.0).abs() < 0.5)
+        .count();
+    assert!(on as f64 / fi.len() as f64 > 0.999);
+    let unit = FS / 45.45;
+    let ch: Vec<usize> = (1..fi.len())
+        .filter(|&i| (fi[i] > 1000.0) != (fi[i - 1] > 1000.0))
+        .collect();
+    for &c in &ch {
+        let off = ((c - ch[0]) as f64 / unit * 2.0).rem_euclid(1.0);
+        assert!(off.min(1.0 - off) < 2.0 / unit, "change at {c}");
+    }
+}
+
+#[test]
+fn psk31_idle_tones_and_shape() {
+    let spec = Psk31Spec {
+        idle: true,
+        ..Default::default()
+    };
+    let mut z = vec![Complex32::default(); (FS * 20.0) as usize];
+    Psk31::new(FS, 1000.0, &spec, false, 10).add_c(&mut z, 1.0);
+    for (f, want) in [(984.375, 0.5), (1015.625, 0.5), (1000.0, 0.0)] {
+        assert!((amp(&z, f) - want).abs() < 0.01, "{f}: {}", amp(&z, f));
+    }
+    let mut z = vec![Complex32::default(); (FS * 20.0) as usize];
+    Psk31::new(FS, 1000.0, &Psk31Spec::default(), false, 11).add_c(&mut z, 1.0);
+    let p: Vec<f64> = z.iter().map(|v| v.norm_sqr() as f64).collect();
+    let mean = p.iter().sum::<f64>() / p.len() as f64;
+    assert!(p.iter().all(|&v| v <= 1.0 + 1e-5) && p.iter().any(|&v| v < 1e-4));
+    assert!(mean > 0.6 && mean < 0.95, "{mean}");
 }

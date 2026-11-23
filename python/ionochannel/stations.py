@@ -223,3 +223,97 @@ def am(x, level_db, offset_hz, fs, rng, spec: Am = Am(), audio=None, signal_powe
 def radar(x, level_db, offset_hz, fs, rng, spec: Radar = Radar(), signal_power=None):
     """x plus an FMCW radar, in-band power level_db against the signal."""
     return _add(x, lambda s, n, c: radar_noise(s, n, fs, offset_hz, rng, spec, c), level_db, signal_power)
+
+
+@dataclass(frozen=True)
+class Rtty:
+    """Amateur RTTY: baud rate, shift (mark the upper tone), stop bits."""
+    baud: float = 45.45
+    shift_hz: float = 170.0
+    stop_bits: float = 1.5
+    fade_hz: float = 0.0
+
+
+@dataclass(frozen=True)
+class Psk31:
+    """PSK31: BPSK at 31.25 baud, a 0 bit reverses the phase through a
+    cosine-shaped zero, a 1 bit holds it. idle: zeros only (two tones at
+    +-baud/2)."""
+    baud: float = 31.25
+    idle: bool = False
+    fade_hz: float = 0.0
+
+
+def _rtty_freqs(n, fs, spec: Rtty, rng) -> np.ndarray:
+    """Instantaneous frequency offset (+-shift/2) for one row: characters
+    of a start bit, 5 random data bits and stop bits, back to back."""
+    unit = fs / spec.baud
+    per = (6 + spec.stop_bits) * unit
+    chars = int(n / per) + 3
+    bits = np.concatenate([np.zeros((chars, 1)), rng.integers(0, 2, (chars, 5)), np.ones((chars, 1))], axis=1)
+    dur = np.tile(np.r_[np.ones(6), spec.stop_bits], chars) * unit
+    edges = np.round(np.concatenate([[0.0], np.cumsum(dur)]) - rng.random() * per).astype(np.int64)
+    f = np.empty(n)
+    for v, a, b in zip(bits.ravel(), edges[:-1], edges[1:]):
+        lo, hi = max(a, 0), min(b, n)
+        if hi > lo:
+            f[lo:hi] = (v - 0.5) * spec.shift_hz
+    return f
+
+
+def rtty_noise(shape, n, fs, offset_hz, rng, spec: Rtty = Rtty(), complex_=True):
+    """An RTTY station alone, (*shape, n), power 1 (constant envelope)."""
+    shape = tuple(shape) if np.iterable(shape) else (shape,)
+    rows = int(np.prod(shape))
+    f = np.stack([_rtty_freqs(n, fs, spec, rng) for _ in range(rows)])
+    z = np.exp(1j * TAU * np.remainder(np.cumsum(f, axis=-1) / fs, 1.0))
+    return _place(z, fs, np.ravel(offset_hz) if np.ndim(offset_hz) else offset_hz,
+                  spec.fade_hz, rng, complex_).reshape(*shape, n)
+
+
+def _psk31_bits(count, idle, rng) -> np.ndarray:
+    """Random Varicode-like words (start and end with 1, no 00 inside),
+    separated by 00; or all zeros when idle."""
+    if idle:
+        return np.zeros(count, np.int8)
+    out = []
+    while len(out) < count:
+        k = int(rng.integers(1, 11))
+        w = [1]
+        for _ in range(k - 2):
+            w.append(1 if w[-1] == 0 else int(rng.integers(0, 2)))
+        if k > 1:
+            w.append(1)
+        out += w + [0, 0]
+    return np.array(out[:count], np.int8)
+
+
+def _psk31_env(n, fs, spec: Psk31, rng) -> np.ndarray:
+    T = fs / spec.baud
+    m = int(np.ceil(n / T)) + 2
+    bits = _psk31_bits(m, spec.idle, rng)
+    sign = np.cumprod(np.where(bits == 0, -1.0, 1.0))           # sign at the end of each symbol
+    prev = np.r_[1.0, sign[:-1]]
+    t = np.arange(n) + rng.random() * T
+    k = (t // T).astype(np.int64)
+    u = (t - k * T) / T
+    return np.where(bits[k] == 0, prev[k] * np.cos(np.pi * u), sign[k])
+
+
+def psk31_noise(shape, n, fs, offset_hz, rng, spec: Psk31 = Psk31(), complex_=True):
+    """A PSK31 station alone, (*shape, n), peak power 1."""
+    shape = tuple(shape) if np.iterable(shape) else (shape,)
+    rows = int(np.prod(shape))
+    env = np.stack([_psk31_env(n, fs, spec, rng) for _ in range(rows)]).astype(complex)
+    return _place(env, fs, np.ravel(offset_hz) if np.ndim(offset_hz) else offset_hz,
+                  spec.fade_hz, rng, complex_).reshape(*shape, n)
+
+
+def rtty(x, level_db, offset_hz, fs, rng, spec: Rtty = Rtty(), signal_power=None):
+    """x plus an RTTY station at level_db against the signal."""
+    return _add(x, lambda s, n, c: rtty_noise(s, n, fs, offset_hz, rng, spec, c), level_db, signal_power)
+
+
+def psk31(x, level_db, offset_hz, fs, rng, spec: Psk31 = Psk31(), signal_power=None):
+    """x plus a PSK31 station, peak power level_db against the signal."""
+    return _add(x, lambda s, n, c: psk31_noise(s, n, fs, offset_hz, rng, spec, c), level_db, signal_power)

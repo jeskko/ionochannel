@@ -33,7 +33,7 @@ from .noise import VD_GAUSS, qrn_params, vd_bandwidth  # noqa: F401
 from .presets import names, preset, presets  # noqa: F401
 from .receiver import Agc, agc_block, agc_gains, bandpass_taps
 from .recorded import default_band
-from .stations import Am, Cw, Radar, morse_units, random_text
+from .stations import Am, Cw, Psk31, Radar, Rtty, _psk31_env, _rtty_freqs, morse_units, random_text
 from .vary import FD_HALF, PHASES, Drift, Ramp, Sine, Table, Vary, bounds, tid  # noqa: F401
 from .vary import table as _vary_table
 
@@ -695,6 +695,37 @@ def radar_noise(shape, n, fs, offset_hz, gen, spec: Radar = Radar(), complex_=Tr
 def radar(x, level_db, offset_hz, fs, gen, spec: Radar = Radar(), signal_power=None):
     """x plus an FMCW radar, in-band power level_db against the signal."""
     return _add(x, lambda r, n, c, d: radar_noise(r, n, fs, offset_hz, gen, spec, c, d), level_db, signal_power)
+
+
+def rtty_noise(shape, n, fs, offset_hz, gen, spec: Rtty = Rtty(), complex_=True, dtype=torch.float32):
+    """An RTTY station alone, (*shape, n), power 1 (keying built on the CPU)."""
+    shape = tuple(shape) if np.iterable(shape) else (shape,)
+    rows = int(np.prod(shape))
+    ct = torch.complex128 if dtype == torch.float64 else torch.complex64
+    rng = _np_seed(gen)
+    f = torch.as_tensor(np.stack([_rtty_freqs(n, fs, spec, rng) for _ in range(rows)]), device=gen.device)
+    z = _phasor(torch.cumsum(f, dim=-1) / fs, ct)
+    return _place(z, fs, offset_hz, spec.fade_hz, gen, complex_).reshape(*shape, n)
+
+
+def psk31_noise(shape, n, fs, offset_hz, gen, spec: Psk31 = Psk31(), complex_=True, dtype=torch.float32):
+    """A PSK31 station alone, (*shape, n), peak power 1."""
+    shape = tuple(shape) if np.iterable(shape) else (shape,)
+    rows = int(np.prod(shape))
+    ct = torch.complex128 if dtype == torch.float64 else torch.complex64
+    rng = _np_seed(gen)
+    env = torch.as_tensor(np.stack([_psk31_env(n, fs, spec, rng) for _ in range(rows)]), device=gen.device).to(ct)
+    return _place(env, fs, offset_hz, spec.fade_hz, gen, complex_).reshape(*shape, n)
+
+
+def rtty(x, level_db, offset_hz, fs, gen, spec: Rtty = Rtty(), signal_power=None):
+    """x plus an RTTY station at level_db against the signal."""
+    return _add(x, lambda r, n, c, d: rtty_noise(r, n, fs, offset_hz, gen, spec, c, d), level_db, signal_power)
+
+
+def psk31(x, level_db, offset_hz, fs, gen, spec: Psk31 = Psk31(), signal_power=None):
+    """x plus a PSK31 station, peak power level_db against the signal."""
+    return _add(x, lambda r, n, c, d: psk31_noise(r, n, fs, offset_hz, gen, spec, c, d), level_db, signal_power)
 
 
 # ---------------------------------------------------------------- recorded noise

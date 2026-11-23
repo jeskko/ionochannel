@@ -570,3 +570,219 @@ impl Radar {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RttySpec {
+    pub baud: f64,
+    /// Mark is the upper tone, offset + shift/2.
+    pub shift_hz: f64,
+    pub stop_bits: f64,
+    pub fade_hz: f64,
+}
+
+impl Default for RttySpec {
+    fn default() -> Self {
+        RttySpec {
+            baud: 45.45,
+            shift_hz: 170.0,
+            stop_bits: 1.5,
+            fade_hz: 0.0,
+        }
+    }
+}
+
+/// Amateur RTTY: continuous-phase FSK; characters of a start bit (space),
+/// 5 random data bits and the stop bits (mark), back to back. Power 1.
+pub struct Rtty {
+    rng: Rng,
+    spec: RttySpec,
+    unit: f64,
+    /// Bits of the current character as (mark, length in units).
+    bits: Vec<(bool, f64)>,
+    i: usize,
+    end: f64,
+    n: f64,
+    cycles: f64,
+    fs: f64,
+    place: Place,
+}
+
+impl Rtty {
+    pub fn new(fs: f64, offset_hz: f64, spec: &RttySpec, real: bool, seed: u64) -> Self {
+        let mut rng = Rng::new(seed);
+        let place = Place::new(fs, offset_hz, spec.fade_hz, real, false, &mut rng);
+        let unit = fs / spec.baud;
+        let mut r = Rtty {
+            unit,
+            bits: Vec::new(),
+            i: 0,
+            end: 0.0,
+            n: 0.0,
+            cycles: 0.0,
+            fs,
+            place,
+            spec: spec.clone(),
+            rng,
+        };
+        r.next_char();
+        // start part-way into a character
+        r.n = (r.rng.uniform() * (6.0 + spec.stop_bits) * unit).floor();
+        r
+    }
+
+    fn next_char(&mut self) {
+        self.bits.clear();
+        self.bits.push((false, 1.0));
+        for _ in 0..5 {
+            self.bits.push((self.rng.next_u64() & 1 == 1, 1.0));
+        }
+        self.bits.push((true, self.spec.stop_bits));
+        self.i = 0;
+        self.end += self.bits[0].1 * self.unit;
+    }
+
+    fn next(&mut self) -> Complex32 {
+        while self.n >= self.end.round() {
+            self.i += 1;
+            if self.i == self.bits.len() {
+                self.next_char();
+            } else {
+                self.end += self.bits[self.i].1 * self.unit;
+            }
+        }
+        self.n += 1.0;
+        let z = Complex64::from_polar(1.0, TAU * self.cycles);
+        let f = if self.bits[self.i].0 { 0.5 } else { -0.5 } * self.spec.shift_hz;
+        self.cycles = (self.cycles + f / self.fs).rem_euclid(1.0);
+        self.place.put(z)
+    }
+
+    pub fn add_c(&mut self, x: &mut [Complex32], power: f64) {
+        let a = power.sqrt() as f32;
+        for v in x {
+            *v += self.next() * a;
+        }
+    }
+
+    pub fn add_r(&mut self, x: &mut [f32], power: f64) {
+        assert!(self.place.real(), "built for complex signals");
+        let a = (2.0 * power).sqrt() as f32;
+        for v in x {
+            *v += self.next().re * a;
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Psk31Spec {
+    pub baud: f64,
+    /// Zeros only: two tones at +-baud/2.
+    pub idle: bool,
+    pub fade_hz: f64,
+}
+
+impl Default for Psk31Spec {
+    fn default() -> Self {
+        Psk31Spec {
+            baud: 31.25,
+            idle: false,
+            fade_hz: 0.0,
+        }
+    }
+}
+
+/// PSK31: BPSK; a 0 bit reverses the phase through a cosine-shaped zero,
+/// a 1 bit holds it. Random Varicode-like words (start and end with 1, no
+/// 00 inside) separated by 00. Peak power 1.
+pub struct Psk31 {
+    rng: Rng,
+    idle: bool,
+    period: f64,
+    t: f64,
+    k: i64,
+    bit: u8,
+    prev: f64,
+    sign: f64,
+    queue: VecDeque<u8>,
+    place: Place,
+}
+
+impl Psk31 {
+    pub fn new(fs: f64, offset_hz: f64, spec: &Psk31Spec, real: bool, seed: u64) -> Self {
+        let mut rng = Rng::new(seed);
+        let place = Place::new(fs, offset_hz, spec.fade_hz, real, false, &mut rng);
+        let period = fs / spec.baud;
+        let t = rng.uniform() * period;
+        Psk31 {
+            rng,
+            idle: spec.idle,
+            period,
+            t,
+            k: -1,
+            bit: 1,
+            prev: 1.0,
+            sign: 1.0,
+            queue: VecDeque::new(),
+            place,
+        }
+    }
+
+    fn next_bit(&mut self) -> u8 {
+        if self.idle {
+            return 0;
+        }
+        if self.queue.is_empty() {
+            let len = 1 + (self.rng.next_u64() % 10) as usize;
+            let mut w = vec![1u8];
+            for _ in 0..len.saturating_sub(2) {
+                let b = if *w.last().unwrap() == 0 {
+                    1
+                } else {
+                    (self.rng.next_u64() & 1) as u8
+                };
+                w.push(b);
+            }
+            if len > 1 {
+                w.push(1);
+            }
+            w.extend([0, 0]);
+            self.queue.extend(w);
+        }
+        self.queue.pop_front().unwrap()
+    }
+
+    fn next(&mut self) -> Complex32 {
+        let k = (self.t / self.period).floor() as i64;
+        while self.k < k {
+            self.k += 1;
+            self.bit = self.next_bit();
+            self.prev = self.sign;
+            if self.bit == 0 {
+                self.sign = -self.sign;
+            }
+        }
+        let u = (self.t - k as f64 * self.period) / self.period;
+        self.t += 1.0;
+        let e = if self.bit == 0 {
+            self.prev * (PI * u).cos()
+        } else {
+            self.sign
+        };
+        self.place.put(Complex64::new(e, 0.0))
+    }
+
+    pub fn add_c(&mut self, x: &mut [Complex32], power: f64) {
+        let a = power.sqrt() as f32;
+        for v in x {
+            *v += self.next() * a;
+        }
+    }
+
+    pub fn add_r(&mut self, x: &mut [f32], power: f64) {
+        assert!(self.place.real(), "built for complex signals");
+        let a = (2.0 * power).sqrt() as f32;
+        for v in x {
+            *v += self.next().re * a;
+        }
+    }
+}
