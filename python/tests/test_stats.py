@@ -107,9 +107,10 @@ def test_awgn_snr():
     assert abs(10 * np.log10(1 / p_in_bw)) < 0.1
 
 
-def test_stocker_presets_80_percent_width():
-    """The Stocker 2013 presets give their 80 %-power Doppler width back."""
-    for name, w80 in (("polar-cap-14mhz", 13.0), ("polar-cap-5mhz", 3.5), ("trough-5mhz", 1.5)):
+def test_measured_presets_80_percent_width():
+    """The Stocker 2013 and Angling 1998 presets give their 80 %-power width back."""
+    for name, w80 in (("polar-cap-14mhz", 13.0), ("polar-cap-5mhz", 3.5), ("trough-5mhz", 1.5),
+                      ("auroral-7-11mhz", 30.3), ("auroral-14-22mhz", 54.6)):
         s = ic.preset(name)[1].components[0].spread_hz
         sigma = s / 2
         f = np.linspace(-6 * sigma, 6 * sigma, 200001)

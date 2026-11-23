@@ -213,11 +213,13 @@ All from the ITU-R texts, checked against them (2026-11-23).
 | polar-cap-14mhz | 0.3 ms | 10.14 Hz | Stocker et al. 2013, Table 2 |
 | polar-cap-5mhz | 1.5 ms | 2.73 Hz | Stocker et al. 2013, Table 2 |
 | trough-5mhz | 4.1 ms | 1.17 Hz | Stocker et al. 2013, Table 2 |
+| auroral-7-11mhz | 10.7 ms | 23.64 Hz | Angling et al. 1998, Table 5 |
+| auroral-14-22mhz | 5.1 ms | 42.6 Hz | Angling et al. 1998, Table 5 |
 
 Each preset has two paths of equal power, except the flat ones, which
 have one.
 
-The last three are 95th percentiles measured from 2009 to 2012 (Stocker,
+The polar and trough presets are 95th percentiles measured from 2009 to 2012 (Stocker,
 Warrington & Siddle, Radio Science 48:638, 2013), each from one row of
 their Table 2:
 
@@ -235,7 +237,19 @@ The two papers define the quantities differently:
   spread here (2σ) is their value divided by 1.2816. For example, 13.0 Hz
   becomes 10.14 Hz.
 - **Multipath spread:** theirs runs from the first mode to the last
-  (modes within 12 dB), which is the delay between the two paths here. The presets live in
+  (modes within 12 dB), which is the delay between the two paths here.
+
+The auroral presets come from the DAMSON sounder (Angling et al., Radio
+Science 33:97, 1998, Table 5). They are values exceeded 5 % of the time,
+all day, on Harstad–Kiruna (194 km, in the auroral zone), in the 6.7–11.2
+and 14.4–21.9 MHz bands. Three things to know:
+
+- **Data:** only measurements at SNR −5 to 5 dB.
+- **Not a pair:** the delay and the Doppler spread are each read
+  separately from the 5 % contour, not as an observed pair. So the
+  preset is harsher than any one 5 % moment.
+- **Same definitions** as Stocker et al. (80 % width, first to last
+  mode). The paper converts to 2σ with the same factor, 0.78. The presets live in
 [`python/ionochannel/presets.json`](python/ionochannel/presets.json),
 which both implementations read.
 

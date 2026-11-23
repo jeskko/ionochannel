@@ -274,5 +274,35 @@
     "spread_hz": 1.17
    }
   ]
+ },
+ "auroral-7-11mhz": {
+  "source": "Angling et al. 1998, Radio Science 33:97, Table 5 (DAMSON, SNR -5 to 5 dB, no guard, 0000-2400 UT): values exceeded 5 % of the time on Harstad-Kiruna (194 km, auroral zone), 6.7-11.2 MHz band, read separately from the 5 % contour, not as a joint pair; Doppler spread there is the 80 %-power width (30.3 Hz), here 2 sigma = width / 1.2816 (the paper's own factor 0.78); multipath spread (10.7 ms) is the path delay",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 23.64
+   },
+   {
+    "delay_ms": 10.7,
+    "power": 0.5,
+    "spread_hz": 23.64
+   }
+  ]
+ },
+ "auroral-14-22mhz": {
+  "source": "Angling et al. 1998, Radio Science 33:97, Table 5 (DAMSON, SNR -5 to 5 dB, no guard, 0000-2400 UT): values exceeded 5 % of the time on Harstad-Kiruna (194 km, auroral zone), 14.4-21.9 MHz band, read separately from the 5 % contour, not as a joint pair; Doppler spread there is the 80 %-power width (54.6 Hz), here 2 sigma = width / 1.2816 (the paper's own factor 0.78); multipath spread (5.1 ms) is the path delay",
+  "paths": [
+   {
+    "delay_ms": 0.0,
+    "power": 0.5,
+    "spread_hz": 42.6
+   },
+   {
+    "delay_ms": 5.1,
+    "power": 0.5,
+    "spread_hz": 42.6
+   }
+  ]
  }
 }
