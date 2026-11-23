@@ -168,6 +168,14 @@ two. The defaults below are illustrative, not measured; set your own.
   - Level: mean power as an SNR in a reference bandwidth, like white
     noise.
 
+- **Noise bursts** (`bursts`, `Bursts`, `--bursts`): noise switched on
+  and off at random, with exponential on and off times (2 ms and 20 ms by
+  default). Packet transmitters such as powerline networking look like
+  this in a narrow band. Level: SNR while on.
+- **VDSL and LED drivers:** in a 3 kHz window VDSL is a steady raised
+  noise floor, so use white noise. LED drivers are switching supplies, so
+  use the comb.
+
 ## Interfering stations
 
 Each station sits at an offset in the band, at a level in dB against the
@@ -497,6 +505,8 @@ Man-made interference is tested against its own parameters
 - **Arcing:** mean power within 10 %; over 90 % of the energy within
   ±1 ms of one phase of the half-cycle; on time within 5 % of
   on / (on + off).
+- **Bursts:** duty within 0.01 of on / (on + off); power while on within
+  2 %; mean on time within 5 %.
 
 Stations are tested against their parameters
 ([`tests/stations.rs`](tests/stations.rs),
@@ -576,6 +586,8 @@ Man-made interference is tested against its own parameters
 - **Arcing:** mean power within 10 %; over 90 % of the energy within
   ±1 ms of one phase of the half-cycle; on time within 5 % of
   on / (on + off).
+- **Bursts:** duty within 0.01 of on / (on + off); power while on within
+  2 %; mean on time within 5 %.
 
 Stations are tested against their parameters
 ([`tests/stations.rs`](tests/stations.rs),
@@ -647,8 +659,8 @@ synthetic tests for CW and FSK decoders. Background for each item is in
 
 1. **Receiver effects:** done.
 2. **Impulsive atmospheric noise:** done, calibrated to P.372 Vd.
-   **Man-made interference:** switching-supply combs and powerline
-   arcing done. Still to do: VDSL, powerline OFDM bursts, LED drivers.
+   **Man-made interference:** done (combs, arcing, noise bursts; VDSL
+   and LED drivers map onto white noise and combs).
 3. **Interfering stations:** CW, carriers, AM, radar, RTTY and PSK31
    done. Still to do: a statistical population of stations per band
    (Mendieta-Otero et al. 2014).

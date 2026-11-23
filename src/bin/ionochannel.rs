@@ -16,9 +16,10 @@
 
 use ionochannel::vary::tid;
 use ionochannel::{
-    Agc, Am, AmSpec, Arcing, ArcingSpec, Channel, Clock, Component, Cw, CwSpec, PathSpec, Psk31,
-    Psk31Spec, Qrn, Radar, RadarSpec, RealChannel, RealReceiver, Receiver, ReceiverSpec, Recorded,
-    Rng, Rtty, RttySpec, Smps, SmpsSpec, Term, Vary, noise, presets, qrn, wav,
+    Agc, Am, AmSpec, Arcing, ArcingSpec, Bursts, BurstsSpec, Channel, Clock, Component, Cw, CwSpec,
+    PathSpec, Psk31, Psk31Spec, Qrn, Radar, RadarSpec, RealChannel, RealReceiver, Receiver,
+    ReceiverSpec, Recorded, Rng, Rtty, RttySpec, Smps, SmpsSpec, Term, Vary, noise, presets, qrn,
+    wav,
 };
 use num_complex::Complex32;
 use std::process::exit;
@@ -42,6 +43,8 @@ const USAGE: &str =
   --smps DB,F[,SP]        a switching-supply comb: each line DB against the signal, one line
                           at F Hz, lines SP Hz apart [60000]; drifting, with mains ripple
   --arcing DB             powerline arcing buzz: SNR in --bw
+  --bursts DB[,ON,OFF]    noise bursts (e.g. powerline networking): SNR in --bw while on,
+                          mean on and off times in ms [2,20]
   --mains HZ              mains frequency for --smps and --arcing [50]
  interfering stations (repeatable; DB against the signal's power, F Hz in the band):
   --cw DB,F[,WPM]         CW, random 2-6 character groups [20 wpm]; DB is key-down power
@@ -175,6 +178,7 @@ fn main() {
     let mut qrn_arg: Option<(f64, f64)> = None;
     let mut smps_arg: Option<(f64, f64, f64)> = None;
     let mut arcing_arg: Option<f64> = None;
+    let mut bursts_arg: Option<(f64, f64, f64)> = None;
     let mut mains = 50.0;
     let mut stations: Vec<Station> = Vec::new();
     let mut noise_file: Option<(String, f64)> = None;
@@ -271,6 +275,21 @@ fn main() {
                     die("--smps: spacing must be > 0");
                 }
                 smps_arg = Some((v[0], v[1], sp));
+            }
+            "--bursts" => {
+                let v = nums(&val("--bursts"), 1, 3, "--bursts");
+                if v.len() == 2 {
+                    die("--bursts: give both ON and OFF, or neither");
+                }
+                let (on, off) = if v.len() == 3 {
+                    (v[1], v[2])
+                } else {
+                    (2.0, 20.0)
+                };
+                if on <= 0.0 || off <= 0.0 {
+                    die("--bursts: ON and OFF must be > 0");
+                }
+                bursts_arg = Some((v[0], on * 1e-3, off * 1e-3));
             }
             "--arcing" => arcing_arg = Some(nums(&val("--arcing"), 1, 1, "--arcing")[0]),
             "--cw" => {
@@ -577,6 +596,10 @@ fn main() {
             Arcing::new(fs, &spec, seed ^ 0x6172_6373)
                 .add_r(x, noise::noise_power(p0, s, bw, fs, false));
         }
+        if let Some((s, on_s, off_s)) = bursts_arg {
+            Bursts::new(fs, &BurstsSpec { on_s, off_s }, seed ^ 0x6273_7473)
+                .add_r(x, noise::noise_power(p0, s, bw, fs, false));
+        }
         for (i, st) in stations.iter().enumerate() {
             st.add_r(x, fs, p0, seed ^ (0x7374_0000 + i as u64));
         }
@@ -637,6 +660,10 @@ fn main() {
             Arcing::new(fs, &spec, seed ^ 0x6172_6373)
                 .add_c(x, noise::noise_power(p0, s, bw, fs, true));
         }
+        if let Some((s, on_s, off_s)) = bursts_arg {
+            Bursts::new(fs, &BurstsSpec { on_s, off_s }, seed ^ 0x6273_7473)
+                .add_c(x, noise::noise_power(p0, s, bw, fs, true));
+        }
         for (i, st) in stations.iter().enumerate() {
             st.add_c(x, fs, p0, seed ^ (0x7374_0000 + i as u64));
         }
@@ -692,6 +719,13 @@ fn main() {
     if let Some((l, f, sp)) = smps_arg {
         eprintln!(
             "ionochannel: SMPS comb, lines {l} dBc at {f} Hz + k * {sp} Hz, mains {mains} Hz"
+        );
+    }
+    if let Some((s, on, off)) = bursts_arg {
+        eprintln!(
+            "ionochannel: noise bursts at {s} dB in {bw} Hz while on, {} ms on, {} ms off",
+            on * 1e3,
+            off * 1e3
         );
     }
     if let Some(s) = arcing_arg {
