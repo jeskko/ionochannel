@@ -92,11 +92,24 @@ How each entry was checked:
   (1987): a review of models and how to validate them.
 - **High latitudes (the DAMSON sounder):**
   - Angling, Cannon, Davies, Willink, Jodalen, Lundborg, Radio Science
-    33(1):97–107 (1998), doi:10.1029/97RS02206. [abs] Abstract, read
-    2026-11-23 on the Birmingham repository page (the paper is
-    paywalled; Wiley refused curl with HTTP 403): Doppler spread 2–55 Hz and multipath spread 1–11 ms
-    "exceeded for 5% of time" across four high-latitude paths. It doesn't
-    say which path or condition gives which, or how spread is defined.
+    33(1):97–107 (1998), doi:10.1029/97RS02206. **[checked]** 2026-11-23,
+    the full paper (a PDF supplied by the user):
+    - Paths (Table 1): Svalbard–Tuentangen 2019 km, Svalbard–Kiruna
+      1158 km, Harstad–Tuentangen 1019 km, Harstad–Kiruna 194 km;
+      3–22 MHz; Doppler resolution 0.62 Hz, range ±40 Hz.
+    - §4.2: multipath spread runs from the rising edge of the central
+      80 % power region of the first mode to the trailing edge of the
+      last; Doppler spread is the central 80 % power width of the
+      composite spectrum; "converted to 2σ by multiplying by 0.78".
+    - Tables 4 and 5: values exceeded 5 % of the time, per path, for
+      0000–2400 and 1900–0100 UT and three bands (2.8–4.7, 6.7–11.2,
+      14.4–21.9 MHz), read as the intercepts of the 5 % contour with each
+      axis. Table 5 (SNR −5 to 5 dB, no guard, all day): multipath
+      0.6–10.7 ms, Doppler spread 1.8–54.6 Hz; Harstad–Kiruna has the
+      largest (10.7 ms at 6.7–11.2 MHz; 54.6 Hz at 14.4–21.9 MHz).
+    - §4.4.2: Doppler spread generally grows with frequency, except
+      Svalbard–Tuentangen (multihop at low frequencies).
+    - Used for the presets auroral-7-11mhz and auroral-14-22mhz.
   - Jacobsen, Jodalen, Cannon, Smith, Angling, DAMSON poster (ESA space
     weather workshop 2), read 2026-11-23: an abstract only. "Large
     Doppler spreads (tens of Hz) are observed during disturbed conditions
@@ -138,9 +151,21 @@ How each entry was checked:
   Spain (Radio Science 2008 and 2012, Remote Sensing 2015), and NVIS
   ("Study of NVIS Channel for USN Protocol Definition in Antarctica",
   Electronics 9(6):1037, 2020) with Doppler shift and delay spread of
-  ground wave, Es and F2 given separately, near Livingston Island. [abs]
-  MDPI refused fetching on 2026-11-23, also with curl (HTTP 403). **Adds:** NVIS with
-  several paths.
+  ground wave, Es and F2 given separately, near Livingston Island.
+  **[checked]** 2026-11-23, the full paper (a PDF supplied by the user;
+  the extracted text overlays a review copy, so some lines are
+  garbled):
+  - 4.3 MHz, 5.7 km (Rockie Glacier) and a second site with ground
+    wave (Argentina Cove); E reflects at about 120 km and F2 at about
+    310 km (Figure 6).
+  - Delay spread is the rms delay spread (eq. 5).
+  - The summary table: skywave delay spread at most 2.75 ms, at least
+    0.05 ms; Doppler spread at most 0.1 Hz; Doppler shift −17.5 Hz at
+    most. With ground wave the delay spread reaches 5.5 ms.
+  - Not used for a preset. An rms spread of 2.75 ms doesn't fit E and
+    F2 at 120 and 310 km. −17.5 Hz looks like an offset between the
+    radios. Mode powers aren't given.
+  **Adds:** NVIS with several paths, if better numbers turn up.
 - **Conditions that change over time:**
   - HiCIRF (Adelaide): ray tracing through an ionosphere that changes
     over time, plus scatter.
