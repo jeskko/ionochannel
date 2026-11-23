@@ -5,13 +5,27 @@ modems and decoders, and for making training data for neural networks.
 It is a Rust crate with a command-line tool, and a numpy Python package
 that implements the same model.
 
-Status: 0.1, early. The Watterson fading model, its standard presets,
-white noise, impulsive atmospheric noise (QRN), man-made interference
-(switching-supply combs, powerline arcing), interfering stations (CW,
-AM, carriers, radar), recorded noise mixed in at an SNR, and the receiver
-(mistuning, passband, AGC) are done and checked against theory, ITU-R
-P.372 or their own parameters. Paths can change over time (drift, TIDs,
-ramps). The Python package has a PyTorch backend for the GPU.
+Status: 0.1. What it has:
+
+- **Channel:** Watterson fading with ITU-R and measured presets; layer
+  modes spread over delay (Vogler & Hoffmeyer); paths whose delay,
+  Doppler, power and spread change over time (drift, TIDs, recorded
+  records); absorption events from space-weather records.
+- **Noise and interference:** white noise; impulsive atmospheric noise
+  (QRN) calibrated to ITU-R P.372; switching-supply combs, powerline
+  arcing and noise bursts; recorded noise at an SNR.
+- **Interfering stations:** CW (one, or a population), AM, carriers,
+  radar, RTTY and PSK31.
+- **Receiver:** clock error, mistuning, passband filter and AGC.
+
+Each part is tested against theory, the source it comes from, or its
+own parameters (see [Validation](#validation)). The Python package has
+a PyTorch backend for the GPU.
+
+Requirements: Rust (edition 2024; tested with 1.99) for the crate and
+the command line; Python 3.10 or later with numpy (tested with 3.14 and
+numpy 2.5) for the package; PyTorch 2.1 or later for `ionochannel.torch`
+(tested with 2.15).
 
 ## The model
 
@@ -135,8 +149,8 @@ follow a trajectory, a sum of terms added to the path's own value:
     from the record. The values are for vertical incidence; scale them
     for your path's geometry yourself.
 - **Seeds:** the changes draw their own random numbers, so a channel's
-  fading for a seed is the same with or without them. A test pins the
-  Rust outputs for a set of seeds.
+  fading for a seed is the same with or without them. A test pins
+  sample Rust outputs for a set of seeds.
 - **Cost:** a moving delay uses the same 33-tap fractional-delay filter
   as fixed ones, interpolated from 512 phases. In numpy that makes a
   batch of 128 × 4 s about 7 times slower (5 s); on the GPU it takes
@@ -337,8 +351,10 @@ for the same input, to about 1e-6.
 
 ## Presets
 
-All from the ITU-R texts, checked against them (2026-11-23).
-`ionochannel --list` prints them.
+The first group comes from the ITU-R texts; the rest from published
+measurements. All were checked against their sources (see
+[docs/references.md](docs/references.md)). `ionochannel --list` prints
+them with their sources.
 
 | name | delay | spread | source |
 |---|---|---|---|
@@ -472,9 +488,12 @@ ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav ou
   fading, so it's the SNR before fading.
 - **Alignment:** the output lines up with the input. The filters'
   latency is taken out.
-- **Reproducibility:** `--seed` fixes the realisation, and the crate's
-  own random generator keeps it the same on every platform and in every
-  version.
+- **Reproducibility:** `--seed` fixes the realisation. The crate has its
+  own random generator, so a seed draws the same random numbers on every
+  platform and in every version, and so the same channel. Outputs can
+  differ in the last bits between platforms, because sin, exp and ln do.
+  [tests/regression.rs](tests/regression.rs) pins sample outputs for a
+  set of seeds.
 
 ## Rust
 
@@ -595,74 +614,6 @@ Both implementations are tested against closed-form theory
 - **Fractional delays:** exact for tones up to 0.375 fs.
 - **Streaming:** the output doesn't depend on block size.
 
-Man-made interference is tested against its own parameters
-([`tests/interference.rs`](tests/interference.rs),
-[`python/tests/test_interference.py`](python/tests/test_interference.py)):
-
-- **Comb:** lines at the right frequencies and powers, nothing between
-  them; AM sidebands at m/2; FM deviation within 0.5 Hz; drift rms within
-  10 %.
-- **Arcing:** mean power within 10 %; over 90 % of the energy within
-  ±1 ms of one phase of the half-cycle; on time within 5 % of
-  on / (on + off).
-- **Bursts:** duty within 0.01 of on / (on + off); power while on within
-  2 %; mean on time within 5 %.
-
-Stations are tested against their parameters
-([`tests/stations.rs`](tests/stations.rs),
-[`python/tests/test_stations.py`](python/tests/test_stations.py)):
-
-- **CW:** "PARIS" is 50 units with 22 key-down; duty 0.44 ± 0.01; it
-  repeats every 3 s at 20 WPM; 10–90 % rise 0.59 × the rise time.
-- **AM:** carrier within 1 %; a tone modulates at 0.3 rms; nothing
-  beyond the audio bandwidth; on real audio the lower sideband below
-  0 Hz is dropped, not folded.
-- **Radar:** sweep rate within 1 %; in-band time as expected.
-- **RTTY:** constant envelope, over 99.9 % of samples at the mark or
-  space tone, tone changes on the half-bit grid.
-- **Population:** stations on at a time = rate × mean duration (Little's
-  law, within 5–8 %); median and interquartile range of the levels match
-  the logistic law; WPM = 1.2 × 331 / duration.
-- **PSK31:** idle gives two tones of amplitude 0.5 at ±15.625 Hz and no
-  carrier; data have peak 1, dips to zero, and mean power 0.6–0.95.
-
-Paths that change ([`tests/vary.rs`](tests/vary.rs),
-[`python/tests/test_vary.py`](python/tests/test_vary.py)):
-
-- **Doppler:** a sine of shift is followed to 0.05 Hz.
-- **Power:** ramps reach their levels.
-- **Spread:** stepping up an octave doubles the measured spread (within
-  6 %) and keeps the power.
-- **Delay:** a sine of delay shows as the expected carrier phase, to
-  0.01 rad. A moving delay held still matches the FFT delay.
-- **Drift:** the rms is within 10 %.
-- **Table:** a replayed record is followed to 0.01 Hz.
-- **Vogler & Hoffmeyer modes** ([`tests/wideband.rs`](tests/wideband.rs),
-  [`python/tests/test_wideband.py`](python/tests/test_wideband.py)): the
-  delay shape is s_v at τL and τU and 1 at τc; the shift at τL is fsL;
-  the Doppler spectrum is s_v at ±σD; the tap powers integrate T within
-  1 %; a normalized mode passes white noise at unit power within 5 %.
-- **Absorption:** D-RAP's highest affected frequency is exact at M1 and
-  X1; 1 dB at the HAF; the (f0 / f)^1.5 scaling; polar cap absorption at
-  30 MHz; a flare record dims a path as computed.
-- **TID:** the Doppler equals −f times the rate of change of the delay.
-- **Seeds:** [`tests/regression.rs`](tests/regression.rs) pins the
-  outputs of `Channel::new` for a set of seeds.
-
-Recorded noise ([`tests/recorded.rs`](tests/recorded.rs),
-[`python/tests/test_recorded.py`](python/tests/test_recorded.py)): a white
-recording comes out at the same power as `awgn` at the same SNR, within
-3 %. A recording band-limited to 300–2700 Hz has the right density. The
-loop seam makes no step larger than the recording's own. Python also
-checks the WAV reader and the resampler.
-
-The PyTorch backend ([`python/tests/test_torch.py`](python/tests/test_torch.py))
-is checked against the same theory: Rayleigh depths, Doppler spread and
-shift, real-audio shift, fractional delay, SNR per row, QRN Vd and power,
-comb lines and AM, arcing power and mains lock, CW duty, AM carrier,
-radar sweep rate and recorded-noise level. Its receiver must match the
-numpy receiver sample for sample.
-
 The receiver is tested against its design
 ([`tests/receiver.rs`](tests/receiver.rs),
 [`python/tests/test_receiver.py`](python/tests/test_receiver.py)):
@@ -738,8 +689,8 @@ Paths that change ([`tests/vary.rs`](tests/vary.rs),
   X1; 1 dB at the HAF; the (f0 / f)^1.5 scaling; polar cap absorption at
   30 MHz; a flare record dims a path as computed.
 - **TID:** the Doppler equals −f times the rate of change of the delay.
-- **Seeds:** [`tests/regression.rs`](tests/regression.rs) pins the
-  outputs of `Channel::new` for a set of seeds.
+- **Seeds:** [`tests/regression.rs`](tests/regression.rs) pins sample
+  outputs of `Channel::new` for a set of seeds, to 1e-5.
 
 Recorded noise ([`tests/recorded.rs`](tests/recorded.rs),
 [`python/tests/test_recorded.py`](python/tests/test_recorded.py)): a white
@@ -768,38 +719,29 @@ python3 python/tests/test_interference.py
 python3 python/tests/test_stations.py
 python3 python/tests/test_recorded.py
 python3 python/tests/test_vary.py
+python3 python/tests/test_wideband.py
 python3 python/tests/test_torch.py      # GPU if there is one; IONOCHANNEL_TORCH_DEVICE=cpu to force
 nice -n 10 python3 tools/check_qrn.py   # QRN against P.372, about 20 s
 ```
 
-## Roadmap
+## Not covered
 
-Ordered by what the first users need: training data for neural noise
-reduction (SSB voice, CW, AM broadcast) and for a signal identifier, and
-synthetic tests for CW and FSK decoders. Background for each item is in
-[docs/references.md](docs/references.md).
+The roadmap was ordered by what the first users need: training data for
+neural noise reduction (SSB voice, CW, AM broadcast) and for a signal
+identifier, and synthetic tests for CW and FSK decoders. All of it is
+in. What isn't, and why (sources in
+[docs/references.md](docs/references.md)):
 
-1. **Receiver effects:** done.
-2. **Impulsive atmospheric noise:** done, calibrated to P.372 Vd.
-   **Man-made interference:** done (combs, arcing, noise bursts; VDSL
-   and LED drivers map onto white noise and combs).
-3. **Interfering stations:** done, including a CW population after
-   Mendieta-Otero et al. 2014. Not done: their congestion-model levels
-   by band, season and place (the coefficients aren't open).
-4. **Recorded noise:** done.
-5. **PyTorch backend:** done.
-6. **Conditions that change over time:** done (ramps, sines, drift,
-   TIDs, replayed records).
-7. **More presets:** done: polar cap, trough, auroral, wideband
-   high-latitude, equatorial spread-F, low-latitude NVIS. Not done: NVIS
-   with ground wave, sporadic E and F2 as separate paths with their own
-   powers (no source gives the powers).
-8. **Wideband modes:** done (Vogler & Hoffmeyer layer-modes spread over
-   delay, as taps). Not done: their Lorentzian Doppler shape, and
-   delay dispersion across a very wide band (group delay changing with
-   frequency, from their sech² layer profile).
-9. **Absorption events:** done (D-RAP flare and polar cap absorption
-   from flux records).
+- **Interference levels by band, season and place:** Mendieta-Otero et
+  al. take them from the congestion model of Economou et al. (2005),
+  whose coefficients aren't openly available. The CW population needs an
+  arrival rate from you.
+- **NVIS with ground wave, sporadic E and F2 as separate paths:** no
+  source found gives their powers.
+- **Vogler & Hoffmeyer:** the Lorentzian Doppler shape, and group delay
+  that changes across a very wide band (their sech² layer profile).
+- **Interference from a transmitter database and ray tracing** (Pederick
+  & Cervera 2016).
 
 ## Licence
 

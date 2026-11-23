@@ -1,6 +1,7 @@
 //! A small, fixed random generator (xoshiro256++ seeded by SplitMix64) so a
-//! seed gives the same channel on every platform and in every version,
-//! whatever happens to other crates' generators.
+//! seed draws the same numbers on every platform and in every version,
+//! whatever happens to other crates' generators. (Outputs built from them
+//! can still differ in the last bits between platforms' maths libraries.)
 
 use num_complex::Complex32;
 
