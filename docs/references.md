@@ -166,13 +166,18 @@ How each entry was checked:
     equator, 12.87–13.37 MHz CW and an FMCW probe (2.5 ms delay window).
     Qualitative only: Doppler and delay spread grow after spread-F onset;
     about one hour analysed, no statistics.
-  - Fitzgerald, Radio Science 34 (1999), doi:10.1029/1998RS900013, is the
-    statistical paper. A search summary (not the source) gives Doppler
-    spread above 6 Hz at −10 dB and above 15 Hz at −30 dB on half the
-    evenings, and coherence bandwidths under 1.5 kHz. Wiley and IEEE
-    refused automated fetching on 2026-11-23, so it is unchecked and
-    unused.
-  **Adds:** a "post-sunset equatorial" preset, given the 1999 paper.
+  - Fitzgerald, Argo & Carlos, "Equatorial spread F effects on an HF
+    path: Doppler spread, spatial coherence, and frequency coherence",
+    Radio Science 34(1):167–178 (1999), doi:10.1029/1998RS900013.
+    **[checked]** 2026-11-23 (a PDF supplied by the user): 700 km
+    Maloelap–Bikini, reflection at 10.18°N 168.40°E, CW at 10.224 MHz
+    and offsets of 0.5–4 kHz, 13 evenings in August 1990. Abstract and
+    Fig. 5: 50 % of evenings Doppler spread > 6 Hz at −10 dB and > 15 Hz
+    at −30 dB (relative to peak power), one instance well above 50 Hz;
+    75 % of evenings coherence bandwidth < 1.5 kHz, 2 of 12 below
+    0.8 kHz; coherence distances defined where coherence falls below
+    50 %. The −30 dB pedestal was incoherent. Used for the preset
+    equatorial-spread-f.
 - **NVIS and long paths (Vilella, Ads, Hervás et al.)**: Antarctica to
   Spain (Radio Science 2008 and 2012, Remote Sensing 2015), and NVIS
   ("Study of NVIS Channel for USN Protocol Definition in Antarctica",
@@ -190,10 +195,13 @@ How each entry was checked:
     most. With ground wave the delay spread reaches 5.5 ms.
   - Dear et al., "Ionospheric channel impulse response measurement system
     for NVIS propagation mode over Java Island based on low-cost SDR
-    platform", Radio Science (2024), doi:10.1029/2023RS007877. A search
-    summary (not the source) gives delay spread 0–1.3 ms (mean about
-    0.46 ms) and Doppler shifts 0.7–1.1 Hz. Wiley refused fetching on
-    2026-11-23; unchecked and unused.
+    platform", Radio Science 59:e2023RS007877 (2024). **[checked]**
+    2026-11-23 (a PDF supplied by the user): Pameungpeuk–Bandung, 7 MHz,
+    15–21 December 2021, quiet (Kp 0.6–3.6). Fig. 12: rms delay spread
+    0–1.3 ms, mean 0.4627 ms; Doppler shift 0.7–1.1 Hz, mean 0.9 Hz. An
+    example impulse response has arrivals at 0, 0.213, 0.441, 1.377 and
+    1.654 ms in two groups (E/Es and F; foEs about 7.1 MHz). No Doppler
+    spread or path powers. Used for the preset nvis-java-7mhz.
   - Not used for a preset. An rms spread of 2.75 ms doesn't fit E and
     F2 at 120 and 310 km. −17.5 Hz looks like an offset between the
     radios. Mode powers aren't given.
@@ -320,11 +328,20 @@ How each entry was checked:
     - Used for `population` (rate left to the user).
   - **Pederick & Cervera**, "Modeling the interference environment in
     the HF band", Radio Science 51:82 (2016): the transmitter database,
-    ray tracing and absorption set the interferers' levels. The DST Group
-    copy refused curl on 2026-11-23.
-- **DTIC ADA277877**: an older wideband HF probe report with rms Doppler
-  and delay spread statistics (per a search summary). DTIC refused
-  fetching on 2026-11-23.
+    ray tracing and absorption set the interferers' levels. Read
+    2026-11-23 (a PDF supplied by the user): it needs transmitter
+    databases, ray tracing and a model ionosphere, so it can't be built
+    from the paper alone; not used.
+- **Nissen & Bello**, "Measured channel parameters for the disturbed
+  wide-bandwidth HF channel", MITRE MP 94B0000006 (January 1994; DTIC
+  ADA277877). **[checked]** 2026-11-23 (a PDF supplied by the user):
+  Søndrestrom–Bedford, 3100 km, 14 March–1 April 1992, DSPN probe at
+  1024 kchip/s. Fig. 3: rms (2σ) Doppler spread median 5 Hz, 10th/90th
+  percentiles 1.75/13 Hz, largest 17 Hz; Doppler shift magnitude median
+  about 0.5 Hz, 90th just below 3 Hz; rms (2σ) delay spread median about
+  100 µs, 10th 17 µs, 90th slightly above 400 µs. Delay-axis
+  correlations support uncorrelated scattering. Used for the presets
+  high-latitude-wb-median and -90.
 - **Sferic waveforms**: nothing focused found yet.
 
 ## Validation methods

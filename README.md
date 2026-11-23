@@ -356,6 +356,9 @@ All from the ITU-R texts, checked against them (2026-11-23).
 | trough-5mhz | 4.1 ms | 1.17 Hz | Stocker et al. 2013, Table 2 |
 | auroral-7-11mhz | 10.7 ms | 23.64 Hz | Angling et al. 1998, Table 5 |
 | auroral-14-22mhz | 5.1 ms | 42.6 Hz | Angling et al. 1998, Table 5 |
+| high-latitude-wb-median / -90 | 0.1 / 0.4 ms | 5 / 13 Hz (shift 0.5 / 3 Hz) | Nissen & Bello 1994 |
+| equatorial-spread-f | 0.222 ms | 2.8 Hz | Fitzgerald et al. 1999 |
+| nvis-java-7mhz | 0.925 ms | 0.5 Hz (shift 0.9 Hz) | Dear et al. 2024; spread from F.1487 |
 
 Each preset has two paths of equal power, except the flat ones, which
 have one.
@@ -390,7 +393,35 @@ and 14.4–21.9 MHz bands. Three things to know:
   separately from the 5 % contour, not as an observed pair. So the
   preset is harsher than any one 5 % moment.
 - **Same definitions** as Stocker et al. (80 % width, first to last
-  mode). The paper converts to 2σ with the same factor, 0.78. The presets live in
+  mode). The paper converts to 2σ with the same factor, 0.78.
+
+The other measured presets each convert their source's figures:
+
+- **high-latitude-wb-median, -90:** MITRE's wideband probe on
+  Søndrestrom–Bedford (3100 km, March–April 1992; Nissen & Bello, MITRE
+  MP 94B0000006).
+  - They give rms (2σ) spreads: Doppler spread median 5 Hz (90th
+    percentile 13 Hz), delay spread median 100 µs (90th above 400 µs),
+    and Doppler shift magnitude median 0.5 Hz (90th just under 3 Hz).
+  - For two equal paths the 2σ delay spread is the path delay.
+  - The 90th-percentile values are taken separately, not as one
+    observed moment.
+- **equatorial-spread-f:** Maloelap–Bikini (700 km, 10.2 MHz, August
+  1990; Fitzgerald, Argo & Carlos, Radio Science 34:167, 1999).
+  - Doppler: half the evenings had Doppler spread above 6 Hz at −10 dB,
+    and above 15 Hz at −30 dB, relative to the peak. A Gaussian with a
+    6 Hz −10 dB width has 2σ = 2.8 Hz. The wider −30 dB "pedestal" isn't
+    modelled.
+  - Delay: 75 % of evenings had a coherence bandwidth (50 % coherence)
+    under 1.5 kHz. Two equal paths reach 0.5 there with τ = 0.222 ms.
+    That's a 75 %-of-evenings value combined with a median.
+- **nvis-java-7mhz:** Pameungpeuk–Bandung NVIS (7 MHz, December 2021,
+  quiet; Dear et al., Radio Science 2024).
+  - Mean rms delay spread 0.463 ms, giving two equal paths 0.925 ms
+    apart.
+  - Mean Doppler shift 0.9 Hz.
+  - The paper gives no Doppler spread, so it uses F.1487's low-latitude
+    quiet 0.5 Hz. The presets live in
 [`python/ionochannel/presets.json`](python/ionochannel/presets.json),
 which both implementations read.
 
@@ -759,10 +790,10 @@ synthetic tests for CW and FSK decoders. Background for each item is in
 5. **PyTorch backend:** done.
 6. **Conditions that change over time:** done (ramps, sines, drift,
    TIDs, replayed records).
-7. **More presets:** polar cap, trough and auroral done (Stocker et al.
-   2013, Angling et al. 1998). Still to do: equatorial spread-F, and NVIS
-   with ground wave, sporadic E and F2 as separate paths (the paper
-   found doesn't give usable numbers).
+7. **More presets:** done: polar cap, trough, auroral, wideband
+   high-latitude, equatorial spread-F, low-latitude NVIS. Not done: NVIS
+   with ground wave, sporadic E and F2 as separate paths with their own
+   powers (no source gives the powers).
 8. **Wideband modes:** done (Vogler & Hoffmeyer layer-modes spread over
    delay, as taps). Not done: their Lorentzian Doppler shape, and
    delay dispersion across a very wide band (group delay changing with

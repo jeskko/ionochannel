@@ -120,6 +120,19 @@ def test_measured_presets_80_percent_width():
         assert abs(width - w80) < 0.01, (name, width)
 
 
+def test_more_measured_presets():
+    """The conversions behind the equatorial, NVIS and MITRE presets."""
+    eq = ic.preset("equatorial-spread-f")
+    tau, sp = eq[1].delay_s, eq[1].components[0].spread_hz
+    assert abs(abs(np.cos(np.pi * 1500 * tau)) - 0.5) < 0.01
+    assert abs(sp * np.sqrt(2 * np.log(10)) - 6.0) < 0.02          # -10 dB width of the Gaussian
+    nv = ic.preset("nvis-java-7mhz")
+    assert abs(nv[1].delay_s / 2 - 0.4627e-3) < 1e-6 and nv[0].components[0].shift_hz == 0.9
+    for name, tau, spread in (("high-latitude-wb-median", 0.1e-3, 5.0), ("high-latitude-wb-90", 0.4e-3, 13.0)):
+        p = ic.preset(name)
+        assert abs(p[1].delay_s - tau) < 1e-12 and p[0].components[0].spread_hz == spread
+
+
 def test_presets():
     assert len(ic.names()) >= 16
     for k, v in ic.presets().items():
