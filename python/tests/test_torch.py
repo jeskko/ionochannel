@@ -205,6 +205,16 @@ def test_bursts():
     assert abs(on.mean() - 2 / 22) < 0.01 and abs(np.mean(np.abs(z[on]) ** 2) - 1) < 0.02
 
 
+def test_population():
+    spec = ic.Population(rate_per_s=0.5, mean_duration_s=20.0, level_db=-6.0, scale_db=0.0, band_hz=(500.0, 2500.0))
+    z = np_(ict.population_noise(4, int(12000 * 10), 12000.0, gen(23), spec))
+    p = np.abs(z) ** 2
+    assert p.max() >= 10 ** -0.6 * 0.99 and np.isfinite(z).all()
+    one = ic.Population(rate_per_s=1e-6, mean_duration_s=1e6, level_db=0.0, scale_db=0.0, band_hz=(1000.0, 1000.0001))
+    z = np_(ict.population_noise(1, 12000, 12000.0, gen(24), one))
+    assert z.shape == (1, 12000)
+
+
 if __name__ == "__main__":
     if torch is None:
         print("skip: no torch")

@@ -264,8 +264,18 @@ How each entry was checked:
   - **Mendieta-Otero, Pérez-Álvarez, Pérez-Díaz**, "Interference
     simulator for the whole HF band: application to CW-Morse", IEEE TEMC
     56(3) 2014 ([arXiv 2402.04742](https://arxiv.org/abs/2402.04742)).
-    **Adds:** a statistical population of interfering stations per band,
-    time and place.
+    **[checked]** 2026-11-23 (author's version):
+    - Poisson arrivals and exponential durations (§V.C); in their ARRL
+      Field Day 2011 example λ = 6.68 interferers/s over all amateur
+      bands (577,181 CW QSOs in 24 h) and mean duration 10 s (Table I).
+    - Each QSO sends "PARIS" repeated, dot = duration / 331 (eq. 18),
+      WPM = 1.2 / dot (eq. 15), raised-cosine edges of dot / 10 (eq. 19).
+    - Levels from the UMIST congestion model (Economou et al., IEE
+      Proc.-Commun. 152(6):980, 2005): Q_k = 1/(1 + e^-y_k),
+      y_k = α_k + B_k·E (eq. 8–11), so E is logistic with mean −α_k/B_k
+      and scale 1/|B_k|; Fig. 3 example B_k = −0.0849, α_k = 10.81. The
+      142/139 coefficients for α_k are in Economou et al., not here.
+    - Used for `population` (rate left to the user).
   - **Pederick & Cervera**, "Modeling the interference environment in
     the HF band", Radio Science 51:82 (2016): the transmitter database,
     ray tracing and absorption set the interferers' levels.

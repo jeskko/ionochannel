@@ -317,3 +317,83 @@ def rtty(x, level_db, offset_hz, fs, rng, spec: Rtty = Rtty(), signal_power=None
 def psk31(x, level_db, offset_hz, fs, rng, spec: Psk31 = Psk31(), signal_power=None):
     """x plus a PSK31 station, peak power level_db against the signal."""
     return _add(x, lambda s, n, c: psk31_noise(s, n, fs, offset_hz, rng, spec, c), level_db, signal_power)
+
+
+@dataclass(frozen=True)
+class Population:
+    """A population of CW stations coming and going (Mendieta-Otero,
+    Pérez-Álvarez & Pérez-Díaz, IEEE TEMC 2014): Poisson arrivals at
+    `rate_per_s` (no default: it depends on band, time and place; their
+    ARRL Field Day 2011 figure, 6.68/s, is for all amateur bands at once),
+    exponential durations (mean 10 s there), frequencies uniform in
+    `band_hz`, levels logistic in dB around `level_db` with scale
+    `scale_db` (1/|B_k|; their Fig. 3 has B_k = -0.0849, 11.8 dB). Each
+    sends "PARIS" with dot = duration / 331 (WPM = 1.2 / dot) and
+    raised-cosine edges of dot / 10."""
+    rate_per_s: float
+    mean_duration_s: float = 10.0
+    level_db: float = 0.0
+    scale_db: float = 11.8
+    band_hz: tuple | None = None
+
+
+_PARIS = None
+
+
+def _paris() -> np.ndarray:
+    global _PARIS
+    if _PARIS is None:
+        _PARIS = np.concatenate([np.full(u, d) for d, u in morse_units("PARIS")]).astype(float)
+    return _PARIS
+
+
+def population_plan(n: int, fs: float, rng, spec: Population, complex_: bool = True) -> list:
+    """The stations heard in one row of n samples: (start s, duration s,
+    frequency Hz, level dB, WPM), including those already on at t = 0."""
+    if spec.rate_per_s <= 0:
+        return []
+    band = spec.band_hz or ((-0.45 * fs, 0.45 * fs) if complex_ else (100.0, 0.45 * fs))
+    t0 = -10 * spec.mean_duration_s
+    t1 = n / fs
+    k = rng.poisson(spec.rate_per_s * (t1 - t0))
+    start = rng.uniform(t0, t1, k)
+    dur = rng.exponential(spec.mean_duration_s, k)
+    keep = start + dur > 0
+    start, dur = start[keep], dur[keep]
+    f = rng.uniform(band[0], band[1], len(start))
+    u = rng.uniform(1e-12, 1 - 1e-12, len(start))
+    level = spec.level_db + spec.scale_db * np.log(u / (1 - u))
+    wpm = 1.2 * 331 / dur
+    return list(zip(start, dur, f, level, wpm))
+
+
+def population_noise(shape, n, fs, rng, spec: Population, complex_=True):
+    """The population alone, (*shape, n): each station at its own level
+    (key-down power 10^(level/10))."""
+    shape = tuple(shape) if np.iterable(shape) else (shape,)
+    rows = int(np.prod(shape))
+    out = np.zeros((rows, n), np.complex64)
+    pat = _paris()
+    for r in range(rows):
+        for start, dur, f, level, wpm in population_plan(n, fs, rng, spec, complex_):
+            a = max(int(np.floor(start * fs)), 0)
+            b = min(int(np.ceil((start + dur) * fs)), n)
+            if b <= a:
+                continue
+            dot = dur / 331
+            t = np.arange(a, b) / fs - start
+            key = np.where((t >= 0) & (t < dur), pat[(t // dot).astype(np.int64) % len(pat)], 0.0)
+            rise = max(1, int(round(dot / 10 * fs)))
+            if rise > 1:
+                i = np.arange(rise)
+                kern = np.diff(np.r_[0.0, 0.5 - 0.5 * np.cos(np.pi * (i + 0.5) / rise)])
+                key = np.convolve(key, kern / kern.sum())[: len(key)]
+            ph = (TAU * np.remainder(f * np.arange(a, b) / fs + rng.random(), 1.0)).astype(np.float32)
+            out[r, a:b] += (10 ** (level / 20) * key).astype(np.float32) * (np.cos(ph) + 1j * np.sin(ph))
+    res = out if complex_ else math.sqrt(2) * out.real
+    return res.reshape(*shape, n)
+
+
+def population(x, fs, rng, spec: Population, signal_power=None):
+    """x plus a population of CW stations; levels against the signal's power."""
+    return _add(x, lambda s, n, c: population_noise(s, n, fs, rng, spec, c), 0.0, signal_power)

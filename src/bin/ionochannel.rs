@@ -17,9 +17,9 @@
 use ionochannel::vary::tid;
 use ionochannel::{
     Agc, Am, AmSpec, Arcing, ArcingSpec, Bursts, BurstsSpec, Channel, Clock, Component, Cw, CwSpec,
-    PathSpec, Psk31, Psk31Spec, Qrn, Radar, RadarSpec, RealChannel, RealReceiver, Receiver,
-    ReceiverSpec, Recorded, Rng, Rtty, RttySpec, Smps, SmpsSpec, Term, Vary, noise, presets, qrn,
-    wav,
+    PathSpec, Population, PopulationSpec, Psk31, Psk31Spec, Qrn, Radar, RadarSpec, RealChannel,
+    RealReceiver, Receiver, ReceiverSpec, Recorded, Rng, Rtty, RttySpec, Smps, SmpsSpec, Term,
+    Vary, noise, presets, qrn, wav,
 };
 use num_complex::Complex32;
 use std::process::exit;
@@ -53,6 +53,8 @@ const USAGE: &str =
   --radar DB,F[,SW,RATE]  FMCW radar: SW Hz sweeps [20000], RATE a second [50]
   --rtty DB,F             RTTY, 45.45 baud, 170 Hz shift, centred on F
   --psk31 DB,F            PSK31, random Varicode-like words; DB is peak power
+  --population R[,DB[,S]] CW stations coming and going (Mendieta-Otero et al. 2014): R arrivals
+                          a second, 10 s mean, levels logistic around DB [0] with scale S [11.8]
   --noise-file PATH,DB    mix in a noise recording (WAV at the same rate; mono for audio, I/Q
                           for I/Q), looped from a random start, at an SNR in --bw
   --noise-band LO,HI      band its level is measured in [300,2700 audio; +-0.45 fs I/Q]
@@ -181,6 +183,7 @@ fn main() {
     let mut bursts_arg: Option<(f64, f64, f64)> = None;
     let mut mains = 50.0;
     let mut stations: Vec<Station> = Vec::new();
+    let mut population_arg: Option<PopulationSpec> = None;
     let mut noise_file: Option<(String, f64)> = None;
     let mut tid_arg: Option<Vec<f64>> = None;
     let mut clock_ppm: Option<f64> = None;
@@ -310,6 +313,17 @@ fn main() {
                     kind: Kind::Am,
                     db: v[0],
                     f: v[1],
+                });
+            }
+            "--population" => {
+                let v = nums(&val("--population"), 1, 3, "--population");
+                if v[0] < 0.0 {
+                    die("--population: rate must be >= 0");
+                }
+                population_arg = Some(PopulationSpec {
+                    level_db: v.get(1).copied().unwrap_or(0.0),
+                    scale_db: v.get(2).copied().unwrap_or(11.8),
+                    ..PopulationSpec::new(v[0])
                 });
             }
             "--rtty" => {
@@ -603,6 +617,9 @@ fn main() {
         for (i, st) in stations.iter().enumerate() {
             st.add_r(x, fs, p0, seed ^ (0x7374_0000 + i as u64));
         }
+        if let Some(spec) = &population_arg {
+            Population::new(fs, spec, true, seed ^ 0x706f_7075).add_r(x, p0);
+        }
         if let (Some(w), Some((path, db))) = (&recording, &noise_file) {
             if w.channels != 1 {
                 die(&format!("{path}: mono audio input needs a mono recording"));
@@ -666,6 +683,9 @@ fn main() {
         }
         for (i, st) in stations.iter().enumerate() {
             st.add_c(x, fs, p0, seed ^ (0x7374_0000 + i as u64));
+        }
+        if let Some(spec) = &population_arg {
+            Population::new(fs, spec, false, seed ^ 0x706f_7075).add_c(x, p0);
         }
         if let (Some(w), Some((path, db))) = (&recording, &noise_file) {
             if w.channels != 2 {
@@ -745,6 +765,12 @@ fn main() {
     }
     if let Some((rms, tau)) = drift_arg {
         eprintln!("ionochannel: Doppler drift {rms} Hz rms, {tau} s");
+    }
+    if let Some(sp) = &population_arg {
+        eprintln!(
+            "ionochannel: CW population, {} arrivals/s, levels around {} dB (scale {} dB)",
+            sp.rate_per_s, sp.level_db, sp.scale_db
+        );
     }
     if let Some((path, db)) = &noise_file {
         eprintln!("ionochannel: recorded noise {path} at {db} dB in {bw} Hz");

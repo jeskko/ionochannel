@@ -786,3 +786,193 @@ impl Psk31 {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PopulationSpec {
+    /// Arrivals per second in the band. No default: it depends on band,
+    /// time and place (Mendieta-Otero et al.'s ARRL Field Day 2011 figure,
+    /// 6.68/s, is for all amateur bands at once).
+    pub rate_per_s: f64,
+    pub mean_duration_s: f64,
+    pub level_db: f64,
+    pub scale_db: f64,
+    /// Band (Hz); `None`: +-0.45 fs for I/Q, 100 Hz to 0.45 fs for audio.
+    pub band_hz: Option<(f64, f64)>,
+}
+
+impl PopulationSpec {
+    /// The paper's other values: mean duration 10 s, scale 11.8 dB.
+    pub fn new(rate_per_s: f64) -> Self {
+        PopulationSpec {
+            rate_per_s,
+            mean_duration_s: 10.0,
+            level_db: 0.0,
+            scale_db: 11.8,
+            band_hz: None,
+        }
+    }
+}
+
+struct PopStation {
+    start: f64,
+    end: f64,
+    dot: f64,
+    amp: f64,
+    step: f64,
+    phase0: f64,
+    kernel: Vec<f64>,
+    keys: VecDeque<f64>,
+}
+
+/// CW stations coming and going (Mendieta-Otero, Pérez-Álvarez &
+/// Pérez-Díaz, IEEE TEMC 2014): Poisson arrivals, exponential durations,
+/// frequencies uniform in the band, levels logistic in dB (scale
+/// 1/|B_k|); each sends "PARIS" with dot = duration / 331 and
+/// raised-cosine edges of dot / 10. Each station's key-down power is
+/// 10^(level/10); `add_*` scale it all by `power`.
+pub struct Population {
+    fs: f64,
+    spec: PopulationSpec,
+    band: (f64, f64),
+    rng: Rng,
+    active: Vec<PopStation>,
+    /// Next arrival, in samples.
+    next: f64,
+    n: f64,
+    paris: Vec<bool>,
+    real: bool,
+}
+
+impl Population {
+    pub fn new(fs: f64, spec: &PopulationSpec, real: bool, seed: u64) -> Self {
+        let band = spec.band_hz.unwrap_or(if real {
+            (100.0, 0.45 * fs)
+        } else {
+            (-0.45 * fs, 0.45 * fs)
+        });
+        let paris = morse_units("PARIS")
+            .iter()
+            .flat_map(|&(d, u)| std::iter::repeat_n(d, u as usize))
+            .collect();
+        let mut p = Population {
+            fs,
+            spec: spec.clone(),
+            band,
+            rng: Rng::new(seed),
+            active: Vec::new(),
+            next: f64::INFINITY,
+            n: 0.0,
+            paris,
+            real,
+        };
+        if spec.rate_per_s > 0.0 {
+            // stations already on: arrivals over the last 10 mean durations
+            let span = 10.0 * spec.mean_duration_s;
+            let mean = spec.rate_per_s * span;
+            let k = p.poisson(mean);
+            for _ in 0..k {
+                let start = -p.rng.uniform() * span * fs;
+                p.add(start);
+            }
+            p.next = p.exp_gap();
+        }
+        p
+    }
+
+    fn poisson(&mut self, mean: f64) -> usize {
+        // sum of exponential gaps; fine for the means used here
+        let (mut k, mut t) = (0, 0.0);
+        loop {
+            t += -(1.0 - self.rng.uniform()).ln();
+            if t > mean {
+                return k;
+            }
+            k += 1;
+        }
+    }
+
+    fn exp_gap(&mut self) -> f64 {
+        -(1.0 - self.rng.uniform()).ln() / self.spec.rate_per_s * self.fs
+    }
+
+    fn add(&mut self, start: f64) {
+        let dur = -(1.0 - self.rng.uniform()).ln() * self.spec.mean_duration_s * self.fs;
+        if start + dur <= 0.0 {
+            return;
+        }
+        let f = self.band.0 + (self.band.1 - self.band.0) * self.rng.uniform();
+        let u = self.rng.uniform().clamp(1e-12, 1.0 - 1e-12);
+        let level = self.spec.level_db + self.spec.scale_db * (u / (1.0 - u)).ln();
+        let dot = dur / 331.0;
+        let rise = ((dot / 10.0).round() as usize).max(1);
+        let e = |x: f64| 0.5 - 0.5 * (PI * x / rise as f64).cos();
+        let mut kernel: Vec<f64> = (0..rise)
+            .map(|i| e(i as f64 + 0.5) - if i == 0 { 0.0 } else { e(i as f64 - 0.5) })
+            .collect();
+        let s: f64 = kernel.iter().sum();
+        kernel.iter_mut().for_each(|k| *k /= s);
+        self.active.push(PopStation {
+            start,
+            end: start + dur,
+            dot,
+            amp: 10f64.powf(level / 20.0),
+            step: f / self.fs,
+            phase0: self.rng.uniform(),
+            keys: std::iter::repeat_n(0.0, rise).collect(),
+            kernel,
+        });
+    }
+
+    fn next(&mut self) -> Complex32 {
+        while self.next <= self.n {
+            let at = self.next;
+            self.add(at);
+            self.next += self.exp_gap();
+        }
+        let n = self.n;
+        let mut z = Complex64::default();
+        let paris = &self.paris;
+        for s in &mut self.active {
+            let key = if n >= s.start && n < s.end {
+                let u = ((n - s.start) / s.dot).floor() as usize % paris.len();
+                if paris[u] { 1.0 } else { 0.0 }
+            } else {
+                0.0
+            };
+            s.keys.push_front(key);
+            s.keys.pop_back();
+            let e: f64 = s.keys.iter().zip(&s.kernel).map(|(a, b)| a * b).sum();
+            if e > 0.0 {
+                let cyc = (s.step * n + s.phase0).rem_euclid(1.0);
+                z += Complex64::from_polar(s.amp * e.min(1.0), TAU * cyc);
+            }
+        }
+        self.active
+            .retain(|s| n < s.end + s.kernel.len() as f64 + 1.0);
+        self.n += 1.0;
+        Complex32::new(z.re as f32, z.im as f32)
+    }
+
+    pub fn add_c(&mut self, x: &mut [Complex32], power: f64) {
+        let a = power.sqrt() as f32;
+        for v in x {
+            *v += self.next() * a;
+        }
+    }
+
+    pub fn add_r(&mut self, x: &mut [f32], power: f64) {
+        assert!(self.real, "built for complex signals");
+        let a = (2.0 * power).sqrt() as f32;
+        for v in x {
+            *v += self.next().re * a;
+        }
+    }
+
+    /// Stations on now (for tests and logs).
+    pub fn active(&self) -> usize {
+        self.active
+            .iter()
+            .filter(|s| self.n >= s.start && self.n < s.end)
+            .count()
+    }
+}

@@ -109,6 +109,34 @@ def test_psk31_idle_tones_and_shape():
     assert all(w[0] == "1" and w[-1] == "1" and "00" not in w for w in words[1:-1])
 
 
+def test_population_statistics():
+    spec = ic.Population(rate_per_s=2.0, mean_duration_s=10.0, level_db=-10.0, scale_db=11.8,
+                         band_hz=(300.0, 2700.0))
+    rng = np.random.default_rng(13)
+    plans = [ic.population_plan(int(FS * 4), FS, rng, spec) for _ in range(400)]
+    on_at_0 = np.mean([sum(1 for s, d, *_ in p if s <= 0 < s + d) for p in plans])
+    assert abs(on_at_0 / (2.0 * 10.0) - 1) < 0.05, on_at_0          # Little: rate * mean duration
+    st = np.array([s for p in plans for s in p])
+    assert st[:, 2].min() >= 300 and st[:, 2].max() <= 2700
+    lv = st[:, 3]
+    assert abs(np.median(lv) + 10) < 0.5
+    iqr = np.subtract(*np.percentile(lv, [75, 25]))
+    assert abs(iqr / (2 * 11.8 * np.log(3)) - 1) < 0.05, iqr        # logistic IQR = 2 s ln 3
+    assert np.allclose(st[:, 4], 1.2 * 331 / st[:, 1])
+    assert ic.population_plan(1000, FS, rng, ic.Population(rate_per_s=0.0)) == []
+
+
+def test_population_signal_levels():
+    spec = ic.Population(rate_per_s=0.5, mean_duration_s=20.0, level_db=-6.0, scale_db=0.0,
+                         band_hz=(500.0, 2500.0))
+    z = ic.population_noise(1, int(FS * 10), FS, np.random.default_rng(14), spec)[0]
+    # with scale 0 every station's key-down power is 10^-0.6; overlaps add
+    p = np.abs(z) ** 2
+    assert p.max() >= 10 ** -0.6 * 0.99
+    plan = ic.population_plan(int(FS * 10), FS, np.random.default_rng(14), spec)
+    assert all(abs(lv + 6) < 1e-9 for *_, lv, _ in plan)
+
+
 if __name__ == "__main__":
     bad = 0
     for name, fn in sorted(globals().items()):

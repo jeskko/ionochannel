@@ -2,7 +2,10 @@
 //! edges, AM carrier and bandwidth, radar sweep rate, streaming.
 
 use ionochannel::stations::morse_units;
-use ionochannel::{Am, AmSpec, Cw, CwSpec, Psk31, Psk31Spec, Radar, RadarSpec, Rtty, RttySpec};
+use ionochannel::{
+    Am, AmSpec, Cw, CwSpec, Population, PopulationSpec, Psk31, Psk31Spec, Radar, RadarSpec, Rtty,
+    RttySpec,
+};
 use num_complex::{Complex32, Complex64};
 use std::f64::consts::TAU;
 
@@ -184,4 +187,30 @@ fn psk31_idle_tones_and_shape() {
     let mean = p.iter().sum::<f64>() / p.len() as f64;
     assert!(p.iter().all(|&v| v <= 1.0 + 1e-5) && p.iter().any(|&v| v < 1e-4));
     assert!(mean > 0.6 && mean < 0.95, "{mean}");
+}
+
+#[test]
+fn population_little_and_levels() {
+    // Little's law: stations on = rate * mean duration
+    let spec = PopulationSpec {
+        band_hz: Some((300.0, 2700.0)),
+        ..PopulationSpec::new(2.0)
+    };
+    let mut on = 0.0;
+    for seed in 0..200 {
+        on += Population::new(FS, &spec, false, seed).active() as f64;
+    }
+    assert!((on / 200.0 / 20.0 - 1.0).abs() < 0.08, "on {}", on / 200.0);
+    // fixed level: key-down power 10^(level/10)
+    let spec = PopulationSpec {
+        level_db: -6.0,
+        scale_db: 0.0,
+        band_hz: Some((500.0, 2500.0)),
+        ..PopulationSpec::new(0.5)
+    };
+    let mut z = vec![Complex32::default(); (FS * 10.0) as usize];
+    let mut p = Population::new(FS, &spec, false, 3);
+    p.add_c(&mut z, 1.0);
+    let max = z.iter().map(|v| v.norm_sqr() as f64).fold(0.0, f64::max);
+    assert!(max >= 10f64.powf(-0.6) * 0.99, "{max}");
 }

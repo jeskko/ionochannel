@@ -41,5 +41,8 @@ pub use qrn::Qrn;
 pub use receiver::{Agc, Clock, RealReceiver, Receiver, ReceiverSpec};
 pub use recorded::Recorded;
 pub use rng::Rng;
-pub use stations::{Am, AmSpec, Cw, CwSpec, Psk31, Psk31Spec, Radar, RadarSpec, Rtty, RttySpec};
+pub use stations::{
+    Am, AmSpec, Cw, CwSpec, Population, PopulationSpec, Psk31, Psk31Spec, Radar, RadarSpec, Rtty,
+    RttySpec,
+};
 pub use vary::{Term, Vary};

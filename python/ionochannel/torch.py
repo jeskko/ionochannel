@@ -33,7 +33,8 @@ from .noise import VD_GAUSS, qrn_params, vd_bandwidth  # noqa: F401
 from .presets import names, preset, presets  # noqa: F401
 from .receiver import Agc, agc_block, agc_gains, bandpass_taps
 from .recorded import default_band
-from .stations import Am, Cw, Psk31, Radar, Rtty, _psk31_env, _rtty_freqs, morse_units, random_text
+from .stations import (Am, Cw, Population, Psk31, Radar, Rtty, _paris, _psk31_env, _rtty_freqs, morse_units,
+                       population_plan, random_text)
 from .vary import FD_HALF, PHASES, Drift, Ramp, Sine, Table, Vary, bounds, tid  # noqa: F401
 from .vary import table as _vary_table
 
@@ -746,6 +747,47 @@ def rtty(x, level_db, offset_hz, fs, gen, spec: Rtty = Rtty(), signal_power=None
 def psk31(x, level_db, offset_hz, fs, gen, spec: Psk31 = Psk31(), signal_power=None):
     """x plus a PSK31 station, peak power level_db against the signal."""
     return _add(x, lambda r, n, c, d: psk31_noise(r, n, fs, offset_hz, gen, spec, c, d), level_db, signal_power)
+
+
+def population_noise(shape, n, fs, gen, spec: Population, complex_=True, dtype=torch.float32, chunk=256):
+    """A population of CW stations (as the numpy one): the plan is drawn
+    on the CPU, the stations are made on the GPU in chunks."""
+    shape = tuple(shape) if np.iterable(shape) else (shape,)
+    rows = int(np.prod(shape))
+    device = gen.device
+    ct = torch.complex128 if dtype == torch.float64 else torch.complex64
+    rng = _np_seed(gen)
+    st = [(r, *p, rng.random()) for r in range(rows) for p in population_plan(n, fs, rng, spec, complex_)]
+    out = torch.zeros((rows, n), dtype=ct, device=device)
+    if not st:
+        return (out if complex_ else math.sqrt(2) * out.real).reshape(*shape, n)
+    pat = torch.as_tensor(_paris(), dtype=dtype, device=device)
+    tn = torch.arange(n, device=device, dtype=torch.float64) / fs
+    for c in range(0, len(st), chunk):
+        b = torch.as_tensor(np.array(st[c:c + chunk], float), device=device)
+        r, start, dur, f, level, ph0 = (b[:, i] for i in range(6))
+        dot = dur / 331
+        t = tn[None, :] - start[:, None]
+        on = (t >= 0) & (t < dur[:, None])
+        idx = torch.remainder(torch.floor(torch.clamp(t, min=0) / dot[:, None]), len(pat)).long()
+        key = torch.where(on, pat[idx], torch.zeros((), dtype=dtype, device=device))
+        rise = torch.clamp(torch.round(dot / 10 * fs), min=1).long()
+        K = int(rise.max().item())
+        i = torch.arange(K, device=device, dtype=torch.float64)[None, :]
+        e = 0.5 - 0.5 * torch.cos(math.pi * torch.clamp((i + 0.5) / rise[:, None], max=1.0))
+        kern = torch.diff(torch.cat([torch.zeros((len(rise), 1), dtype=torch.float64, device=device), e], 1), dim=1)
+        kern = (kern / kern.sum(1, keepdim=True)).to(dtype)
+        m = fast_len(n + K)
+        key = torch.fft.irfft(torch.fft.rfft(key, m, dim=-1) * torch.fft.rfft(kern, m, dim=-1), m, dim=-1)[:, :n]
+        z = (10 ** (level / 20)).to(dtype)[:, None] * key.clamp(0, 1) * _phasor(f[:, None] * tn[None, :] + ph0[:, None], ct)
+        out.index_add_(0, r.long(), z)
+    res = out if complex_ else math.sqrt(2) * out.real
+    return res.reshape(*shape, n)
+
+
+def population(x, fs, gen, spec: Population, signal_power=None):
+    """x plus a population of CW stations; levels against the signal's power."""
+    return _add(x, lambda r, n, c, d: population_noise(r, n, fs, gen, spec, c, d), 0.0, signal_power)
 
 
 # ---------------------------------------------------------------- recorded noise

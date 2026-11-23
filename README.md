@@ -214,8 +214,22 @@ folding it back. The defaults are illustrative.
   swish. It is tapered off at the band edges, so it doesn't alias. Level:
   power while in the band.
 
-There is no statistical population of stations per band, time and place
-yet (Mendieta-Otero et al. 2014); choose the stations yourself.
+- **A population of CW stations** (`population`, `Population`,
+  `--population`), after Mendieta-Otero, Pérez-Álvarez & Pérez-Díaz
+  (IEEE Trans. EMC 2014):
+  - Stations arrive at random (Poisson) and stay for exponential times,
+    10 s on average in their example. Their frequencies are uniform in
+    the band.
+  - Their levels are logistic in dB around a mean, with a scale of
+    11.8 dB, from the paper's Fig. 3 example (B_k = −0.0849).
+  - Each sends "PARIS" with dot = duration / 331, so a 10 s station runs
+    at 40 WPM, with raised-cosine edges of dot / 10.
+  - **The arrival rate has no default.** In the paper it comes from the
+    congestion model of Economou et al. (2005), whose coefficients for
+    band, season, sunspot number and place aren't open, and their
+    Field Day figure (6.68/s) covers all amateur bands at once.
+  - It costs 5 s per 128 × 4 s batch in numpy at 1 arrival/s, and 73 ms
+    on the GPU.
 
 ## Recorded noise
 
@@ -351,6 +365,8 @@ ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav ou
   a line at F Hz, each line DB against the signal. `--arcing DB` adds
   arcing buzz at an SNR in `--bw`. `--mains HZ` sets 50 or 60 Hz for
   both.
+- **Population:** `--population RATE[,DB[,SCALE]]` adds CW stations
+  coming and going.
 - **Stations** (each can be repeated): `--cw DB,F[,WPM]`, `--am DB,F`,
   `--rtty DB,F`, `--psk31 DB,F`,
   `--carrier DB,F`, `--radar DB,F[,SWEEP_HZ,RATE_HZ]`. The stations don't
@@ -520,6 +536,9 @@ Stations are tested against their parameters
 - **Radar:** sweep rate within 1 %; in-band time as expected.
 - **RTTY:** constant envelope, over 99.9 % of samples at the mark or
   space tone, tone changes on the half-bit grid.
+- **Population:** stations on at a time = rate × mean duration (Little's
+  law, within 5–8 %); median and interquartile range of the levels match
+  the logistic law; WPM = 1.2 × 331 / duration.
 - **PSK31:** idle gives two tones of amplitude 0.5 at ±15.625 Hz and no
   carrier; data have peak 1, dips to zero, and mean power 0.6–0.95.
 
@@ -601,6 +620,9 @@ Stations are tested against their parameters
 - **Radar:** sweep rate within 1 %; in-band time as expected.
 - **RTTY:** constant envelope, over 99.9 % of samples at the mark or
   space tone, tone changes on the half-bit grid.
+- **Population:** stations on at a time = rate × mean duration (Little's
+  law, within 5–8 %); median and interquartile range of the levels match
+  the logistic law; WPM = 1.2 × 331 / duration.
 - **PSK31:** idle gives two tones of amplitude 0.5 at ±15.625 Hz and no
   carrier; data have peak 1, dips to zero, and mean power 0.6–0.95.
 
@@ -661,9 +683,9 @@ synthetic tests for CW and FSK decoders. Background for each item is in
 2. **Impulsive atmospheric noise:** done, calibrated to P.372 Vd.
    **Man-made interference:** done (combs, arcing, noise bursts; VDSL
    and LED drivers map onto white noise and combs).
-3. **Interfering stations:** CW, carriers, AM, radar, RTTY and PSK31
-   done. Still to do: a statistical population of stations per band
-   (Mendieta-Otero et al. 2014).
+3. **Interfering stations:** done, including a CW population after
+   Mendieta-Otero et al. 2014. Not done: their congestion-model levels
+   by band, season and place (the coefficients aren't open).
 4. **Recorded noise:** done.
 5. **PyTorch backend:** done.
 6. **Conditions that change over time:** done (ramps, sines, drift,
