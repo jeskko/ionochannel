@@ -59,6 +59,7 @@ follow a trajectory, a sum of terms added to the path's own value:
 | `Ramp(t0, t1, from, to)` | linear from `from` at t0 to `to` at t1, held before and after |
 | `Sine(amp, period, phase)` | amp · sin(2πt / period + phase) |
 | `Drift(rms, tau)` | a random drift (Ornstein-Uhlenbeck), correlation time tau, clamped at ±4 rms |
+| `Table(t_s, values)` | a recorded trajectory, linear between its points, held before and after |
 
 - **Units:** delay in seconds (clamped at 0), shift in Hz on top of the
   path's own, power in dB, and spread in octaves.
@@ -77,6 +78,10 @@ follow a trajectory, a sum of terms added to the path's own value:
   - Medium-scale TIDs run 15–60 min, large-scale 30–180 min.
   - At 7 MHz over 800 km with 5 % and 60 min, the delay swings ±0.13 ms
     and the Doppler ±1.6 Hz.
+- **Measured records:** `Table` replays a measured record, such as the
+  WWV/CHU carrier Doppler from HamSCI Grape (Zenodo 6622112, 8122124).
+  Convert it yourself to time and value; check each record's licence.
+  None ship with ionochannel.
 - **Seeds:** the changes draw their own random numbers, so a channel's
   fading for a seed is the same with or without them. A test pins the
   Rust outputs for a set of seeds.
@@ -334,7 +339,9 @@ ionochannel --preset moderate --passband -4500,4500 --agc 2000,1000 am-iq.wav ou
   go through the channel; each is added after it, at its own level.
 - **Changes over time:** `--tid F_MHZ,KM,REL,MIN[,DEG]` puts the same TID
   on every path. `--doppler-drift RMS_HZ,TAU_S` makes each path's
-  Doppler drift at random.
+  Doppler drift at random. `--doppler-file PATH` replays a Doppler
+  record on every path: a CSV of `time_s,hz` lines, with `#` lines
+  skipped.
 - **Recorded noise:** `--noise-file PATH,DB` mixes a WAV recording in
   at an SNR in `--bw`; `--noise-band LO,HI` sets the band its level is
   measured in.
@@ -502,6 +509,7 @@ Paths that change ([`tests/vary.rs`](tests/vary.rs),
 - **Delay:** a sine of delay shows as the expected carrier phase, to
   0.01 rad. A moving delay held still matches the FFT delay.
 - **Drift:** the rms is within 10 %.
+- **Table:** a replayed record is followed to 0.01 Hz.
 - **TID:** the Doppler equals −f times the rate of change of the delay.
 - **Seeds:** [`tests/regression.rs`](tests/regression.rs) pins the
   outputs of `Channel::new` for a set of seeds.
@@ -576,6 +584,7 @@ Paths that change ([`tests/vary.rs`](tests/vary.rs),
 - **Delay:** a sine of delay shows as the expected carrier phase, to
   0.01 rad. A moving delay held still matches the FFT delay.
 - **Drift:** the rms is within 10 %.
+- **Table:** a replayed record is followed to 0.01 Hz.
 - **TID:** the Doppler equals −f times the rate of change of the delay.
 - **Seeds:** [`tests/regression.rs`](tests/regression.rs) pins the
   outputs of `Channel::new` for a set of seeds.
@@ -628,8 +637,7 @@ synthetic tests for CW and FSK decoders. Background for each item is in
 4. **Recorded noise:** done.
 5. **PyTorch backend:** done.
 6. **Conditions that change over time:** done (ramps, sines, drift,
-   TIDs). Still to do: replaying measured Doppler records (HamSCI Grape:
-   WWV/CHU).
+   TIDs, replayed records).
 7. **More presets:** polar cap, trough and auroral done (Stocker et al.
    2013, Angling et al. 1998). Still to do: equatorial spread-F, and NVIS
    with ground wave, sporadic E and F2 as separate paths (the paper

@@ -35,6 +35,25 @@ pub enum Term {
     /// A random drift (Ornstein-Uhlenbeck): `rms`, correlation time
     /// `tau_s`, clamped at +-4 rms. Each realisation draws its own.
     Drift { rms: f64, tau_s: f64 },
+    /// A recorded trajectory: values at times (s, increasing), linear in
+    /// between, held before the first and after the last. For replaying
+    /// measured Doppler or amplitude records.
+    Table { t_s: Vec<f64>, values: Vec<f64> },
+}
+
+impl Term {
+    /// A [`Term::Table`] from (time s, value) pairs, checked.
+    pub fn table(points: &[(f64, f64)]) -> Self {
+        assert!(!points.is_empty(), "a table needs at least one point");
+        assert!(
+            points.windows(2).all(|w| w[1].0 > w[0].0),
+            "table times must increase"
+        );
+        Term::Table {
+            t_s: points.iter().map(|p| p.0).collect(),
+            values: points.iter().map(|p| p.1).collect(),
+        }
+    }
 }
 
 /// What changes on one path; empty trajectories change nothing.
@@ -58,10 +77,13 @@ impl Vary {
 /// The range (min, max) a trajectory can take.
 pub fn bounds(terms: &[Term]) -> (f64, f64) {
     terms.iter().fold((0.0, 0.0), |(lo, hi), t| {
-        let (a, b) = match *t {
-            Term::Ramp { from, to, .. } => (from.min(to), from.max(to)),
+        let (a, b) = match t {
+            Term::Ramp { from, to, .. } => (from.min(*to), from.max(*to)),
             Term::Sine { amp, .. } => (-amp.abs(), amp.abs()),
             Term::Drift { rms, .. } => (-4.0 * rms.abs(), 4.0 * rms.abs()),
+            Term::Table { values, .. } => values
+                .iter()
+                .fold((f64::MAX, f64::MIN), |(l, h), &v| (l.min(v), h.max(v))),
         };
         (lo + a, hi + b)
     })
@@ -106,7 +128,7 @@ impl Run {
         let ou = terms
             .iter()
             .filter_map(|t| match *t {
-                Term::Drift { rms, tau_s } => {
+                Term::Drift { rms, tau_s, .. } => {
                     let rho = if tau_s > 0.0 {
                         (-1.0 / (fs * tau_s)).exp()
                     } else {
@@ -132,8 +154,8 @@ impl Run {
         let mut v = 0.0;
         let mut k = 0;
         for term in &self.terms {
-            v += match *term {
-                Term::Ramp {
+            v += match term {
+                &Term::Ramp {
                     t0_s,
                     t1_s,
                     from,
@@ -147,11 +169,22 @@ impl Run {
                         from + (to - from) * (t - t0_s) / (t1_s - t0_s)
                     }
                 }
-                Term::Sine {
+                &Term::Sine {
                     amp,
                     period_s,
                     phase,
                 } => amp * (TAU * t / period_s + phase).sin(),
+                Term::Table { t_s, values } => {
+                    let i = t_s.partition_point(|&x| x <= t);
+                    if i == 0 {
+                        values[0]
+                    } else if i == t_s.len() {
+                        values[i - 1]
+                    } else {
+                        let f = (t - t_s[i - 1]) / (t_s[i] - t_s[i - 1]);
+                        values[i - 1] + (values[i] - values[i - 1]) * f
+                    }
+                }
                 Term::Drift { .. } => {
                     let (s, _, rms) = self.ou[k];
                     k += 1;

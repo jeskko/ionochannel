@@ -5,6 +5,7 @@ follow a trajectory, a list of terms added to the path's own value:
     Ramp(t0_s, t1_s, from_, to)     linear, held before and after
     Sine(amp, period_s, phase=0)    amp * sin(2 pi t / period + phase)
     Drift(rms, tau_s)               Ornstein-Uhlenbeck, clamped at +-4 rms
+    Table(t_s, values)              a recorded trajectory, linear in between
 
     vary = [Vary(shift_hz=[Sine(2.0, 600)]), tid(7e6, 800, 0.05, 3600)]
     y = ic.Channel(fs, paths, vary=vary).apply(x, rng)
@@ -47,6 +48,19 @@ class Drift:
 
 
 @dataclass(frozen=True)
+class Table:
+    """A recorded trajectory: values at times (s, increasing), linear in
+    between, held before the first and after the last."""
+    t_s: tuple
+    values: tuple
+
+    def __post_init__(self):
+        t = np.asarray(self.t_s, float)
+        if len(t) == 0 or len(t) != len(self.values) or np.any(np.diff(t) <= 0):
+            raise ValueError("a table needs increasing times and one value per time")
+
+
+@dataclass(frozen=True)
 class Vary:
     delay_s: tuple = field(default_factory=tuple)
     shift_hz: tuple = field(default_factory=tuple)
@@ -64,6 +78,8 @@ def bounds(terms) -> tuple[float, float]:
             a, b = min(t.from_, t.to), max(t.from_, t.to)
         elif isinstance(t, Sine):
             a, b = -abs(t.amp), abs(t.amp)
+        elif isinstance(t, Table):
+            a, b = float(min(t.values)), float(max(t.values))
         else:
             a, b = -4 * abs(t.rms), 4 * abs(t.rms)
         lo, hi = lo + a, hi + b
@@ -111,6 +127,8 @@ def trajectory(terms, rows: int, n: int, fs: float, rng) -> np.ndarray:
             v += term.from_ + (term.to - term.from_) * f
         elif isinstance(term, Sine):
             v += term.amp * np.sin(2 * math.pi * t / term.period_s + term.phase)
+        elif isinstance(term, Table):
+            v += np.interp(t, term.t_s, term.values)
         else:
             v += np.clip(_ou(rows, n, fs, term.rms, term.tau_s, rng), -4 * term.rms, 4 * term.rms)
     return v

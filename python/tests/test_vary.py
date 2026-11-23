@@ -92,6 +92,20 @@ def test_tid():
         assert abs(val(v.shift_hz[0], t) + 10e6 * dd) < 1e-6
 
 
+def test_table_replays_a_record():
+    fs = 1000.0
+    rec = ic.Table((1.0, 2.0, 3.0), (0.0, 4.0, -2.0))
+    y = run(fs, [ic.specular(0, 1.0)], [ic.Vary(shift_hz=(rec,))], np.ones((1, 4000), complex), 8)[0]
+    fi = inst_freq(y, fs)
+    t = (np.arange(3999) + 0.5) / fs
+    assert np.max(np.abs(fi - np.interp(t - 0.5 / fs, rec.t_s, rec.values))) < 0.01
+    try:
+        ic.Table((1.0, 1.0), (0.0, 1.0))
+        raise AssertionError("no error for times that don't increase")
+    except ValueError:
+        pass
+
+
 if __name__ == "__main__":
     bad = 0
     for name, fn in sorted(globals().items()):

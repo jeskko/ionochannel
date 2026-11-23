@@ -34,7 +34,7 @@ from .presets import names, preset, presets  # noqa: F401
 from .receiver import Agc, agc_block, agc_gains, bandpass_taps
 from .recorded import default_band
 from .stations import Am, Cw, Radar, morse_units, random_text
-from .vary import FD_HALF, PHASES, Drift, Ramp, Sine, Vary, bounds, tid  # noqa: F401
+from .vary import FD_HALF, PHASES, Drift, Ramp, Sine, Table, Vary, bounds, tid  # noqa: F401
 from .vary import table as _vary_table
 
 # ---------------------------------------------------------------- helpers
@@ -267,6 +267,8 @@ def trajectory(terms, rows: int, n: int, fs: float, gen) -> torch.Tensor:
             v = v + term.from_ + (term.to - term.from_) * fr
         elif isinstance(term, Sine):
             v = v + term.amp * torch.sin(TAU * t / term.period_s + term.phase)
+        elif isinstance(term, Table):
+            v = v + torch.as_tensor(np.interp(np.arange(n) / fs, term.t_s, term.values), device=device)
         else:
             rho = math.exp(-1 / (fs * term.tau_s)) if term.tau_s > 0 else 0.0
             v = v + torch.clamp(_ar1(rows, n, rho, term.rms, gen, device), -4 * term.rms, 4 * term.rms)

@@ -19,7 +19,7 @@ from .interference import Arcing, Smps, arcing, arcing_noise, smps, smps_noise
 from .noise import qrn, qrn_noise, vd_bandwidth
 from .receiver import Agc, Receiver, bandpass_taps, clock_offset
 from .recorded import band_density, mix_noise, read_wav, recorded_noise, resample
-from .vary import Drift, Ramp, Sine, Vary, tid
+from .vary import Drift, Ramp, Sine, Table, Vary, tid
 from .stations import Am, Cw, Radar, am, am_noise, cw, cw_noise, radar, radar_noise, speech_like
 
 __all__ = ["Channel", "Component", "Path", "awgn", "power", "scatter", "specular", "tap_gain", "names", "preset", "presets",
@@ -27,5 +27,5 @@ __all__ = ["Channel", "Component", "Path", "awgn", "power", "scatter", "specular
            "Arcing", "Smps", "arcing", "arcing_noise", "smps", "smps_noise",
            "Am", "Cw", "Radar", "am", "am_noise", "cw", "cw_noise", "radar", "radar_noise", "speech_like",
            "band_density", "mix_noise", "read_wav", "recorded_noise", "resample",
-           "Drift", "Ramp", "Sine", "Vary", "tid"]
+           "Drift", "Ramp", "Sine", "Table", "Vary", "tid"]
 __version__ = "0.1.0"

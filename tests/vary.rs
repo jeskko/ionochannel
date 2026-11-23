@@ -235,3 +235,29 @@ fn streaming_with_variation() {
     }
     assert_eq!(a, b);
 }
+
+#[test]
+fn table_replays_a_record() {
+    let fs = 1000.0;
+    let rec = Term::table(&[(1.0, 0.0), (2.0, 4.0), (3.0, -2.0)]);
+    let v = Vary {
+        shift_hz: vec![rec],
+        ..Default::default()
+    };
+    let mut x = vec![Complex32::new(1.0, 0.0); 4000];
+    run(fs, &[PathSpec::specular(0.0, 1.0, 0.0)], &[v], &mut x, 5);
+    let want = |t: f64| {
+        if t <= 1.0 {
+            0.0
+        } else if t <= 2.0 {
+            4.0 * (t - 1.0)
+        } else if t <= 3.0 {
+            4.0 - 6.0 * (t - 2.0)
+        } else {
+            -2.0
+        }
+    };
+    for (i, f) in inst_freq(&x, fs).iter().enumerate() {
+        assert!((f - want(i as f64 / fs)).abs() < 0.01, "{i}: {f}");
+    }
+}
